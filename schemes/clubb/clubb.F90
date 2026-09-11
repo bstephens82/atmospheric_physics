@@ -478,10 +478,10 @@ module clubb
                         rga, gravit, clubb_rnevap_effic, do_cldcool, do_rainturb, & ! in
                         !do_clubb_mf, 
                         l_implemented, grid_type, lq, deep_scheme, & ! in
-                        state_q, t, pmid, zm, & ! in
-                        phis, pdel, pdeldry, ps, & ! in
-                        pint, zi, omega, wsx, & ! in
-                        wsy, cflx, shf, landfrac, ts, & ! in
+                        state_q, state_t, state_pmid, state_zm, & ! in
+                        state_phis, state_pdel, state_pdeldry, & ! in
+                        state_pint, state_zi, state_omega, state_ps, & ! in
+                        wsx, wsy, cflx, shf, landfrac, ts, & ! in
                         sclr_idx, clubb_l_ascending_grid, clubb_do_energyfix, & ! in
                         ixq, ixcldliq, ixcldice, ixrtpthlp, ixwpthlp, & ! in
                         ixwprtp, ixwp3, ixwp2, ixthlp2, ixrtp2, ixup2, ixvp2, & ! in
@@ -588,12 +588,12 @@ module clubb
     real(kind_phys), intent(in) :: wsx(:), wsy(:), shf(:)
     real(kind_phys), intent(in) :: cflx(:,:)
     real(kind_phys), intent(in) :: clubb_params_single_col(:,:)
-    real(kind_phys), intent(in) :: lat(:), lon(:), phis(:), ps(:)
-    real(kind_phys), intent(in) :: pint(:,:)
-    real(kind_phys), intent(in) :: pmid(:,:)
+    real(kind_phys), intent(in) :: lat(:), lon(:), state_phis(:), state_ps(:)
+    real(kind_phys), intent(in) :: state_pint(:,:)
+    real(kind_phys), intent(in) :: state_pmid(:,:)
     real(kind_phys), intent(in) :: landfrac(:)
-    real(kind_phys), intent(in) :: pdel(:,:), pdeldry(:,:), omega(:,:), &
-                                   t(:,:), zm(:,:), zi(:,:)
+    real(kind_phys), intent(in) :: state_pdel(:,:), state_pdeldry(:,:), state_omega(:,:), &
+                                   state_t(:,:), state_zm(:,:), state_zi(:,:)
 
     logical, intent(in) :: clubb_do_adv, first_step, first_restart_step, l_implemented, &
                            !do_clubb_mf, 
@@ -983,19 +983,19 @@ module clubb
     if (do_clubb_mf) then
        ! SVP
        do k = 1, pver
-          call qsat(t(1:ncol,k), pmid(1:ncol,k), esat(1:ncol,k), rh(1:ncol,k), ncol)
+          call qsat(state_t(1:ncol,k), state_pmid(1:ncol,k), esat(1:ncol,k), rh(1:ncol,k), ncol)
        end do
 
        rhlev(:ncol) = 0._kind_phys
        if (clubb_mf_Lopt==7 .or. clubb_mf_Lopt==6) then
           ! Interpolate RH to 500 hPa
           rh(:ncol,:) = state_q(:ncol,:,1)/rh(:ncol,:)
-          call vertinterp(ncol, ncol, pver, pmid(:ncol,:), 50000._kind_phys, rh, rhlev, &
-               extrapolate='Z', ln_interp=.true., ps=ps(:ncol), phis=phis(:ncol), tbot=t(:ncol,pver))
+          call vertinterp(ncol, ncol, pver, state_pmid(:ncol,:), 50000._kind_phys, rh, rhlev, &
+               extrapolate='Z', ln_interp=.true., ps=state_ps(:ncol), phis=state_phis(:ncol), tbot=state_t(:ncol,pver))
        else if (clubb_mf_Lopt==8) then
           ! Mass of q, by layer and vertically integrated
-          mq(:ncol,:) = state_q(:ncol,:,1) * pdel(:ncol,:) * rga
-          mqsat(:ncol,:) = rh(:ncol,:) * pdel(:ncol,:) * rga
+          mq(:ncol,:) = state_q(:ncol,:,1) * state_pdel(:ncol,:) * rga
+          mqsat(:ncol,:) = rh(:ncol,:) * state_pdel(:ncol,:) * rga
           do k=2,pver
              mq(:ncol,1) = mq(:ncol,1) + mq(:ncol,k)
              mqsat(:ncol,1) = mqsat(:ncol,1) + mqsat(:ncol,k)
@@ -1077,9 +1077,9 @@ module clubb
     ! with using OpenACC, see the "ifdef _OPENACC" section above for restriction examples
 
     !$acc data copyin( pdf_params_chnk, pdf_params_zm_chnk, sclr_idx, &
-    !$acc              state_q, u, v, t, pmid, &
-    !$acc              zm, phis, pdel, pdeldry, s, &
-    !$acc              pint, zi, omega, lat, &
+    !$acc              state_q, u, v, state_t, state_pmid, &
+    !$acc              state_zm, state_phis, state_pdel, state_pdeldry, s, &
+    !$acc              state_pint, state_zi, state_omega, lat, &
     !$acc              wsx, wsy, cflx, shf, &
     !$acc              err_info, err_info%err_header, &
     !$acc              cpairv, rairv, se_dis, eleak, cld_pbuf, clubb_params_single_col, grid_dx, grid_dy ) &
@@ -1404,13 +1404,13 @@ module clubb
         k_cam = top_lev - 1 + k  
 
         ! Define the CLUBB thermodynamic grid (in units of m)
-        zt_g(i,k) = zm(i,k_cam) - zi(i,pverp)
+        zt_g(i,k) = state_zm(i,k_cam) - state_zi(i,pverp)
 
-        invrs_dz_g(i,k) = 1._kind_phys / ( zi(i,k_cam) - zi(i,k_cam+1) )  ! compute thickness
+        invrs_dz_g(i,k) = 1._kind_phys / ( state_zi(i,k_cam) - state_zi(i,k_cam+1) )  ! compute thickness
 
-        rho_zt(i,k)          = rga * pdel(i,k_cam)    * invrs_dz_g(i,k)
+        rho_zt(i,k)          = rga * state_pdel(i,k_cam)    * invrs_dz_g(i,k)
 
-        rho_ds_zt(i,k)       = rga * pdeldry(i,k_cam) * invrs_dz_g(i,k)
+        rho_ds_zt(i,k)       = rga * state_pdeldry(i,k_cam) * invrs_dz_g(i,k)
 
         invrs_rho_ds_zt(i,k) = 1._kind_phys / rho_ds_zt(i,k)
 
@@ -1423,7 +1423,7 @@ module clubb
 
         k_cam = top_lev - 1 + k  
 
-        p_in_Pa(i,k) = pmid(i,k_cam)
+        p_in_Pa(i,k) = state_pmid(i,k_cam)
         
         !  Compute inverse exner function consistent with CLUBB's definition, which uses a constant
         !  surface pressure.  CAM's exner (in state) does not.  Therefore, for consistent
@@ -1434,17 +1434,17 @@ module clubb
         invrs_exner_zt(i,k) = 1._kind_phys / exner(i,k)
 
         ! exception - setting this to moist thv_ds_zt
-        thv_ds_zt(i,k) = t(i,k_cam) * invrs_exner_zt(i,k)  &
+        thv_ds_zt(i,k) = state_t(i,k_cam) * invrs_exner_zt(i,k)  &
                          * (1._kind_phys + zvir * state_q(i,k_cam,ixq) - state_q(i,k_cam,ixcldliq))
 
         rcm(i,k)    = state_q(i,k_cam,ixcldliq)
         rtm(i,k)    = state_q(i,k_cam,ixq) + state_q(i,k_cam,ixcldliq)
 
-        thlm(i,k)   = ( t(i,k_cam) - ( latvap * invrs_cpairv(i,k_cam) ) &
+        thlm(i,k)   = ( state_t(i,k_cam) - ( latvap * invrs_cpairv(i,k_cam) ) &
                                                * state_q(i,k_cam,ixcldliq) ) * invrs_exner_zt(i,k)
         qc_zt(i,k) = state_q(i,k_cam,ixcldliq)
         qv_zt(i,k) = state_q(i,k_cam,ixq)
-        th_zt(i,k) = t(i,k_cam)*invrs_exner_zt(i,k)
+        th_zt(i,k) = state_t(i,k_cam)*invrs_exner_zt(i,k)
       end do
     end do
 
@@ -1455,7 +1455,7 @@ module clubb
         k_cam = top_lev - 1 + k  
 
         !  Compute mean w wind on thermo grid, convert from omega to w
-        wm_zt(i,k) = -1._kind_phys * ( omega(i,k_cam) - omega(i,pver) ) / ( rho_zt(i,k) * gravit )
+        wm_zt(i,k) = -1._kind_phys * ( state_omega(i,k_cam) - state_omega(i,pver) ) / ( rho_zt(i,k) * gravit )
 
         cloud_frac(i,k)       = cld_pbuf(i,k_cam)
 
@@ -1470,13 +1470,13 @@ module clubb
     !$acc parallel loop gang vector default(present)
     do i = 1, ncol
 
-      deltaz(i)         = zi(i,pverp-1) - zi(i,pverp)
+      deltaz(i)         = state_zi(i,pverp-1) - state_zi(i,pverp)
 
       !  Set the surface pressure      
-      p_sfc(i)          = pint(i,pverp)
+      p_sfc(i)          = state_pint(i,pverp)
 
       !  Set the elevation of the surface
-      sfc_elevation(i)  = zi(i,pverp)
+      sfc_elevation(i)  = state_zi(i,pverp)
 
     end do
 
@@ -1485,7 +1485,7 @@ module clubb
     do k = 1, nzm_clubb
       do i = 1, ncol
         k_cam = top_lev - 1 + k  
-        zi_g(i,k) = zi(i,k_cam) - zi(i,pverp)
+        zi_g(i,k) = state_zi(i,k_cam) - state_zi(i,pverp)
       end do
     end do
 
@@ -1495,7 +1495,7 @@ module clubb
         do i = 1, ncol
           k_cam = top_lev - 1 + k
           kappa_zt(i,k)   = rairv(i,k_cam) * invrs_cpairv(i,k_cam)
-          dz_g(i,k)       = zi(i,k_cam) - zi(i,k_cam+1)  ! compute thickness
+          dz_g(i,k)       = state_zi(i,k_cam) - state_zi(i,k_cam+1)  ! compute thickness
         end do
       end do
 
@@ -1503,7 +1503,7 @@ module clubb
       do k = 1, nzm_clubb
         do i = 1, ncol
           k_cam = top_lev - 1 + k
-          p_in_Pa_zm(i,k)     = pint(i,k_cam)
+          p_in_Pa_zm(i,k)     = state_pint(i,k_cam)
           tke_zm(i,k)     = tke_pbuf(i,k_cam)
         end do
       end do
@@ -1667,14 +1667,14 @@ module clubb
 
       !call t_stopf('clubb_tend_cam:acc_region')
       !call t_startf('clubb_tend_cam:non_acc_region')
-      !$acc update host( u, v, t, pmid, wsx, wsy )
+      !$acc update host( u, v, state_t, state_pmid, wsx, wsy )
 
       ! Adjust surface stresses using winds from the prior macmic iteration
       do i = 1, ncol
         ubar = sqrt(u(i,pver)**2+v(i,pver)**2)
         if (ubar <  0.25_kind_phys) ubar = 0.25_kind_phys
 
-        rrho(i)     = calc_ideal_gas_rrho(rair, t(i,pver), pmid(i,pver))
+        rrho(i)     = calc_ideal_gas_rrho(rair, state_t(i,pver), state_pmid(i,pver))
         ustar    = calc_friction_velocity(wsx(i), wsy(i), rrho(i))
 
         upwp_sfc(i) = -u(i,pver)*ustar**2/ubar
@@ -2481,7 +2481,7 @@ module clubb
         do k = 1, nzt_clubb
           do i = 1, ncol
             k_cam = top_lev - 1 + k
-            qrl_clubb(i,k) = qrl_pbuf(i,k_cam) / ( cpairv(i,k_cam) * pdeldry(i,k_cam) )
+            qrl_clubb(i,k) = qrl_pbuf(i,k_cam) / ( cpairv(i,k_cam) * state_pdeldry(i,k_cam) )
           end do
         end do
 
@@ -2667,7 +2667,7 @@ module clubb
         k_clubb = k + 1 - top_lev
         clubb_s(i,k_clubb) = cpairv(i,k) * thlm(i,k_clubb) / invrs_exner_zt(i,k_clubb) &
                        + latvap * rcm(i,k_clubb) &
-                       + gravit * zm(i,k) + phis(i)
+                       + gravit * state_zm(i,k) + state_phis(i)
       end do
     end do
 
@@ -2796,10 +2796,10 @@ module clubb
       ! after CLUBB is called.  This is for energy conservation purposes.
       do k = top_lev, pver
         k_clubb     = k + 1 - top_lev
-        se_a = se_a + clubb_s(i,k_clubb)*pdel(i,k)*rga
-        ke_a = ke_a + 0.5_kind_phys*(um(i,k_clubb)**2+vm(i,k_clubb)**2)*pdel(i,k)*rga
-        wv_a = wv_a + (rtm(i,k_clubb)-rcm(i,k_clubb))*pdeldry(i,k)*rga
-        wl_a = wl_a + (rcm(i,k_clubb))*pdeldry(i,k)*rga
+        se_a = se_a + clubb_s(i,k_clubb)*state_pdel(i,k)*rga
+        ke_a = ke_a + 0.5_kind_phys*(um(i,k_clubb)**2+vm(i,k_clubb)**2)*state_pdel(i,k)*rga
+        wv_a = wv_a + (rtm(i,k_clubb)-rcm(i,k_clubb))*state_pdeldry(i,k)*rga
+        wl_a = wl_a + (rcm(i,k_clubb))*state_pdeldry(i,k)*rga
       end do
 
       ! Based on these integrals, compute the total energy after CLUBB call
@@ -2807,10 +2807,10 @@ module clubb
 
       do k = top_lev, pver
         ! Do the same as above, but for before CLUBB was called.
-        se_b = se_b + s(i,k)*pdel(i,k)*rga
-        ke_b = ke_b + 0.5_kind_phys*(u(i,k)**2+v(i,k)**2)*pdel(i,k)*rga
-        wv_b = wv_b + state_q(i,k,ixq)*pdeldry(i,k)*rga
-        wl_b = wl_b + state_q(i,k,ixcldliq)*pdeldry(i,k)*rga
+        se_b = se_b + s(i,k)*state_pdel(i,k)*rga
+        ke_b = ke_b + 0.5_kind_phys*(u(i,k)**2+v(i,k)**2)*state_pdel(i,k)*rga
+        wv_b = wv_b + state_q(i,k,ixq)*state_pdeldry(i,k)*rga
+        wl_b = wl_b + state_q(i,k,ixcldliq)*state_pdeldry(i,k)*rga
       end do
 
       ! Based on these integrals, compute the total energy before CLUBB call
@@ -2826,7 +2826,7 @@ module clubb
       end if
 
       ! Compute the disbalance of total energy, over depth where CLUBB is active
-      se_dis(i) = ( te_a - te_b ) / ( pint(i,pverp) - pint(i,clubbtop_pbuf(i)) )
+      se_dis(i) = ( te_a - te_b ) / ( state_pint(i,pverp) - state_pint(i,clubbtop_pbuf(i)) )
 
       eleak(i) = ( te_a - te_b ) * invrs_hdtime
 
@@ -3049,18 +3049,18 @@ module clubb
   subroutine clubb2_run(ncol, pver, ixcldliq, ixcldice, ixnumliq, ixnumice, & ! in
                         clubb_detliq_rad, clubb_detice_rad, clubb_detphase_lowtemp, &! in
                         meltpt_temp, latice, rga, & ! in
-                        dlf, t, pdel, pdeldry, & ! in
-                        q, s, det_s, det_ice, & ! inout
+                        dlf, state_t, state_pdel, state_pdeldry, & ! in
+                        ptend_q, s, det_s, det_ice, & ! inout
                         dlf_liq_out, dlf_ice_out ) ! out
 
     ! Input variables, intent(in)
     integer, intent(in) :: ncol, pver, ixcldliq, ixcldice, ixnumliq, ixnumice
     real(kind_phys), intent(in) :: clubb_detliq_rad, clubb_detice_rad, clubb_detphase_lowtemp
     real(kind_phys), intent(in) :: meltpt_temp, latice, rga
-    real(kind_phys), intent(in) :: dlf(:,:), t(:,:), pdel(:,:), pdeldry(:,:)
+    real(kind_phys), intent(in) :: dlf(:,:), state_t(:,:), state_pdel(:,:), state_pdeldry(:,:)
 
     ! Input variables, intent(inout)
-    real(kind_phys), intent(inout) :: q(:,:,:)
+    real(kind_phys), intent(inout) :: ptend_q(:,:,:)
     real(kind_phys), intent(inout) :: s(:,:)
     real(kind_phys), intent(inout) :: det_s(:), det_ice(:)
  
@@ -3093,21 +3093,21 @@ module clubb
     do k = 1, pver
       do i = 1, ncol
 
-        if( t(i,k) > meltpt_temp ) then
+        if( state_t(i,k) > meltpt_temp ) then
           dum1 = 0.0_kind_phys
-        elseif ( t(i,k) < dt_low ) then
+        elseif ( state_t(i,k) < dt_low ) then
           dum1 = 1.0_kind_phys
         else
-          dum1 = ( meltpt_temp - t(i,k) ) / ( meltpt_temp - dt_low )
+          dum1 = ( meltpt_temp - state_t(i,k) ) / ( meltpt_temp - dt_low )
         endif
 
-        q(i,k,ixcldliq) = dlf(i,k) * ( 1._kind_phys - dum1 )
-        q(i,k,ixcldice) = dlf(i,k) * dum1
-        q(i,k,ixnumliq) = 3._kind_phys * ( max(0._kind_phys, ( dlf(i,k) - dlf2 )) * ( 1._kind_phys - dum1 ) ) &
+        ptend_q(i,k,ixcldliq) = dlf(i,k) * ( 1._kind_phys - dum1 )
+        ptend_q(i,k,ixcldice) = dlf(i,k) * dum1
+        ptend_q(i,k,ixnumliq) = 3._kind_phys * ( max(0._kind_phys, ( dlf(i,k) - dlf2 )) * ( 1._kind_phys - dum1 ) ) &
                                    / (4._kind_phys*3.14_kind_phys*dl_rad**3*997._kind_phys) + & ! Deep    Convection
                                    3._kind_phys * (                         dlf2    * ( 1._kind_phys - dum1 ) ) &
                                    / (4._kind_phys*3.14_kind_phys*10.e-6_kind_phys**3*997._kind_phys)     ! Shallow Convection
-        q(i,k,ixnumice) = 3._kind_phys * ( max(0._kind_phys, ( dlf(i,k) - dlf2 )) *  dum1 ) &
+        ptend_q(i,k,ixnumice) = 3._kind_phys * ( max(0._kind_phys, ( dlf(i,k) - dlf2 )) *  dum1 ) &
                                    / (4._kind_phys*3.14_kind_phys*di_rad**3*500._kind_phys) + & ! Deep    Convection
                                    3._kind_phys * (                         dlf2    *  dum1 ) &
                                    / (4._kind_phys*3.14_kind_phys*50.e-6_kind_phys**3*500._kind_phys)     ! Shallow Convection
@@ -3117,14 +3117,14 @@ module clubb
         dlf_ice_out(i,k) = dlf(i,k) * dum1
 
         ! convert moist dlf tendencies to dry
-        q(i,k,ixcldliq) = q(i,k,ixcldliq)*pdel(i,k)/pdeldry(i,k)
-        q(i,k,ixcldice) = q(i,k,ixcldice)*pdel(i,k)/pdeldry(i,k)
+        ptend_q(i,k,ixcldliq) = ptend_q(i,k,ixcldliq)*state_pdel(i,k)/state_pdeldry(i,k)
+        ptend_q(i,k,ixcldice) = ptend_q(i,k,ixcldice)*state_pdel(i,k)/state_pdeldry(i,k)
 
         ! Only rliq is saved from deep convection, which is the reserved liquid.  We need to keep
         !   track of the integrals of ice and static energy that is effected from conversion to ice
         !   so that the energy checker doesn't complain.
-        det_s(i)                  = det_s(i)   + s(i,k)          * pdel(i,k)    * rga
-        det_ice(i)                = det_ice(i) - q(i,k,ixcldice) * pdeldry(i,k) * rga
+        det_s(i)                  = det_s(i)   + s(i,k)          * state_pdel(i,k)    * rga
+        det_ice(i)                = det_ice(i) - ptend_q(i,k,ixcldice) * state_pdeldry(i,k) * rga
       enddo
     enddo
 
@@ -3141,11 +3141,11 @@ module clubb
                         rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
                         dp1, dp2, zvir, rair, cpair, gravit, karman, & ! in
                         calday, tropp_days, & ! in
-                        lat, phis, landfrac, snowhland, & ! in
+                        lat, state_phis, landfrac, snowhland, & ! in
                         wsx, wsy, shf, & ! in
-                        pint, pmid, pdel, pdeldry, & ! in
-                        rcm, cloud_frac, t, exner, & ! in
-                        state_exner, zm, zi, u, & ! in
+                        state_pint, state_pmid, state_pdel, state_pdeldry, & ! in
+                        rcm, cloud_frac, state_t, exner, & ! in
+                        state_exner, state_zm, state_zi, u, & ! in
                         v, cmfmc, cflx, state_q, & ! in
                         single_column, scm_cambfb_mode, lq, & ! in
                         cnst_type, scm_clubb_iop_name, subcol_scheme, & ! in
@@ -3173,11 +3173,11 @@ module clubb
     real(kind_phys), intent(in) :: dp1, dp2, zvir, rair, cpair, gravit, karman
     real(kind_phys), intent(in) :: calday
     real(kind_phys), intent(in) :: tropp_days(:)
-    real(kind_phys), intent(in) :: lat(:), phis(:), landfrac(:), snowhland(:), &
+    real(kind_phys), intent(in) :: lat(:), state_phis(:), landfrac(:), snowhland(:), &
                                    wsx(:), wsy(:), shf(:)
-    real(kind_phys), intent(in) :: pint(:,:), pmid(:,:), pdel(:,:), pdeldry(:,:), rcm(:,:), &
-                                   cloud_frac(:,:), t(:,:), exner(:,:), state_exner(:,:), &
-                                   zm(:,:), zi(:,:), u(:,:), v(:,:), cmfmc(:,:), cflx(:,:), &
+    real(kind_phys), intent(in) :: state_pint(:,:), state_pmid(:,:), state_pdel(:,:), state_pdeldry(:,:), rcm(:,:), &
+                                   cloud_frac(:,:), state_t(:,:), exner(:,:), state_exner(:,:), &
+                                   state_zm(:,:), state_zi(:,:), u(:,:), v(:,:), cmfmc(:,:), cflx(:,:), &
                                    mf_cloudfrac_output(:,:), mf_qc_output(:,:)
     real(kind_phys), intent(in) :: state_q(:,:,:)
    ! Climatological tropopause pressures (Pa), (ncol,ntimes=12).
@@ -3221,7 +3221,7 @@ module clubb
       if (lq(ixind) .and. cnst_type(ixind) == 'wet') then
         do k = 1, pver
           do i = 1, ncol
-            ptend_q(i,k,ixind) = ptend_q(i,k,ixind)*pdeldry(i,k)/pdel(i,k)
+            ptend_q(i,k,ixind) = ptend_q(i,k,ixind)*state_pdeldry(i,k)/state_pdel(i,k)
           end do
         end do
       end if
@@ -3332,7 +3332,7 @@ module clubb
 !    troplev(:) = 0
     !REMOVECAM_END
 !    call tropopause_findChemTrop( state, troplev )
-!    call tropopause_findChemTrop(ncol, pver, lat, pint, pmid, t, zi, zm, phis, &
+!    call tropopause_findChemTrop(ncol, pver, lat, state_pint, state_pmid, state_t, state_zi, state_zm, state_phis, &
 !                                 calday, tropp_p_loc, tropp_days, &
 !                                 tropLev, & 
 !                                 errmsg, errflg)
@@ -3361,10 +3361,10 @@ module clubb
 !      end where
 !
 !      if ( trim(subcol_scheme) == 'SILHS' ) then
-!        call aist_vector(state_q(:,k,ixq),t(:,k),pmid(:,k),state_q(:,k,ixcldice), &
+!        call aist_vector(state_q(:,k,ixq),state_t(:,k),state_pmid(:,k),state_q(:,k,ixcldice), &
 !             state_q(:,k,ixnumice), landfrac(:),snowhland(:),aist_pbuf(:,k),ncol )
 !      else
-!        call aist_vector(state_q(:,k,ixq),t(:,k),pmid(:,k),state_q(:,k,ixcldice), &
+!        call aist_vector(state_q(:,k,ixq),state_t(:,k),state_pmid(:,k),state_q(:,k,ixcldice), &
 !              state_q(:,k,ixnumice), landfrac(:),snowhland(:),aist_pbuf(:,k),ncol,&
 !              qsatfac_out=qsatfac_pbuf(:,k), rhmini_in=rhmini, rhmaxi_in=rhmaxi)
 !      endif
@@ -3400,14 +3400,14 @@ module clubb
     do k = 1, pver
       do i = 1, ncol
          !subroutine pblind expects "Stull" definition of Exner
-         th(i,k) = t(i,k)*state_exner(i,k)
+         th(i,k) = state_t(i,k)*state_exner(i,k)
          !thv should have condensate loading to be consistent with earlier def's in this module
          thv(i,k) = th(i,k)*(1.0_kind_phys+zvir*state_q(i,k,ixq) - state_q(i,k,ixcldliq))
       enddo
     enddo
 
     ! diagnose surface friction and obukhov length (inputs to diagnose PBL depth)
-    rrho   (1:ncol) = calc_ideal_gas_rrho(rair, t(1:ncol,pver), pmid(1:ncol,pver))
+    rrho   (1:ncol) = calc_ideal_gas_rrho(rair, state_t(1:ncol,pver), state_pmid(1:ncol,pver))
     ustar2 (1:ncol) = calc_friction_velocity(wsx(1:ncol), wsy(1:ncol), rrho(1:ncol))
     ! use correct qflux from coupler
     kinheat(1:ncol) = calc_kinematic_heat_flux(shf(1:ncol), rrho(1:ncol), cpair)
@@ -3429,8 +3429,8 @@ module clubb
       pver      = pver,                                      &
       pverp     = pverp,                                     &
       gravit    = gravit,                                    &
-      z         = zm(:ncol,:pver),                    &
-      zi        = zi(:ncol,:pverp),                   &
+      z         = state_zm(:ncol,:pver),                    &
+      zi        = state_zi(:ncol,:pverp),                   &
       u         = u(:ncol,:pver),                     &
       v         = v(:ncol,:pver),                     &
       cldn      = cld_pbuf(:ncol,:pver),                   &
