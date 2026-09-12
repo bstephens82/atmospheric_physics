@@ -476,12 +476,11 @@ module clubb
                         wp3_const, cld_macmic_num_steps, clubb_params_single_col, & ! in
                         cpair, cpairv, rair, inv_p0_clubb, rairv, zvir, latvap, latice, & ! in
                         rga, gravit, clubb_rnevap_effic, do_cldcool, do_rainturb, & ! in
-                        !do_clubb_mf, 
                         l_implemented, grid_type, lq, deep_scheme, & ! in
                         state_q, state_t, state_pmid, state_zm, & ! in
                         state_phis, state_pdel, state_pdeldry, & ! in
                         state_pint, state_zi, state_omega, state_ps, & ! in
-                        wsx, wsy, cflx, shf, landfrac, ts, & ! in
+                        wsx, wsy, cflx, shf, landfrac, ts, tpert, & ! in
                         sclr_idx, clubb_l_ascending_grid, clubb_do_energyfix, & ! in
                         ixq, ixcldliq, ixcldice, ixrtpthlp, ixwpthlp, & ! in
                         ixwprtp, ixwp3, ixwp2, ixthlp2, ixrtp2, ixup2, ixvp2, & ! in
@@ -518,17 +517,17 @@ module clubb
                         stats_zt, stats_zm, stats_sfc, stats_rad_zt, stats_rad_zm, & ! inout
                         out_zt, out_zm, out_sfc, out_radzt, out_radzm, & ! inout
                         invrs_cpairv, clubbtop_pbuf, & ! inout
-                        mf_ztop_nadv, mf_L0_nadv, mf_cape_nadv, max_cfl_nadv, mf_freq_nadv, &
-                        s_aww, s_awthlup, s_awqtup, s_awuup, s_awvup, s_awthldn, &
-                        s_awqtdn, s_awudn, s_awvdn, mf_precc, mf_thlflxup, mf_qtflxup, &
-                        mf_uflxup, mf_vflxup, mf_thlflxdn, mf_qtflxdn, mf_uflxdn, mf_vflxdn, &
-                        mf_uflx, mf_vflx, mf_thvflx, mf_rcm, mf_ent_nadv, &
-                        mf_upa, mf_upw, mf_dnw, mf_upmf, mf_upqt, mf_dnqt, mf_upthl, mf_dnthl, &
-                        mf_upthv, mf_upth, mf_upqc, mf_upbuoy, mf_updet, mf_upent, &
-                        mf_thlforcup_nadv, mf_qtforcup_nadv, mf_thlforcdn_nadv, &
-                        mf_qtforcdn_nadv, mf_thlforc_nadv, mf_qtforc_nadv, tpert, &
-                        ztopma, ztopmn, mf_sqtup, mf_sqtdn, prec_sh_pbuf, snow_sh_pbuf, ddcpmn, &
-                        mf_cloudfrac_zt, mf_qc_zt, &
+                        mf_ztop_nadv, mf_L0_nadv, mf_cape_nadv, max_cfl_nadv, mf_freq_nadv, & ! inout
+                        s_aww, s_awthlup, s_awqtup, s_awuup, s_awvup, s_awthldn, & ! inout
+                        s_awqtdn, s_awudn, s_awvdn, mf_precc, mf_thlflxup, mf_qtflxup, & ! inout
+                        mf_uflxup, mf_vflxup, mf_thlflxdn, mf_qtflxdn, mf_uflxdn, mf_vflxdn, & ! inout
+                        mf_uflx, mf_vflx, mf_thvflx, mf_rcm, mf_ent_nadv, & ! inout
+                        mf_upa, mf_upw, mf_dnw, mf_upmf, mf_upqt, mf_dnqt, mf_upthl, mf_dnthl, & ! inout
+                        mf_upthv, mf_upth, mf_upqc, mf_upbuoy, mf_updet, mf_upent, & ! inout
+                        mf_thlforcup_nadv, mf_qtforcup_nadv, mf_thlforcdn_nadv, & ! inout
+                        mf_qtforcdn_nadv, mf_thlforc_nadv, mf_qtforc_nadv, & ! inout
+                        ztopma, ztopmn, mf_sqtup, mf_sqtdn, prec_sh_pbuf, snow_sh_pbuf, ddcpmn, & ! inout
+                        mf_cloudfrac_zt, mf_qc_zt, & ! inout
                         errmsg, errflg ) ! out
 
     use clubb_mf,              only: integrate_mf, do_clubb_mf, clubb_mf_nup, &
@@ -592,6 +591,7 @@ module clubb
     real(kind_phys), intent(in) :: state_pint(:,:)
     real(kind_phys), intent(in) :: state_pmid(:,:)
     real(kind_phys), intent(in) :: landfrac(:)
+    real(kind_phys), intent(in) :: ts(:)
     real(kind_phys), intent(in) :: state_pdel(:,:), state_pdeldry(:,:), state_omega(:,:), &
                                    state_t(:,:), state_zm(:,:), state_zi(:,:)
 
@@ -633,8 +633,6 @@ module clubb
     real(kind_phys), intent(inout) :: s(:,:), u(:,:), v(:,:)
     real(kind_phys), intent(inout) :: ptend_q(:,:,:)
 
-!BAS new variables being added in
-    real(kind_phys) :: ustar2(ncol), rrho(ncol)
     real(kind_phys), intent(inout) :: mf_ztop_nadv(:,:), mf_L0_nadv(:,:), mf_cape_nadv(:,:)
     real(kind_phys), intent(inout) :: max_cfl_nadv(:), mf_freq_nadv(:), prec_sh_pbuf(:), snow_sh_pbuf(:)
     real(kind_phys), intent(inout) :: s_aww(:,:), s_awthlup(:,:), s_awqtup(:,:), s_awuup(:,:), s_awvup(:,:), s_awthldn(:,:)
@@ -649,8 +647,6 @@ module clubb
     real(kind_phys), intent(inout) :: cbm1_macmic(:), cbm1(:), tpert(:)
     real(kind_phys), intent(inout) :: mf_thlforcup_nadv(:,:), mf_qtforcup_nadv(:,:), mf_thlforcdn_nadv(:,:)
     real(kind_phys), intent(inout) :: mf_qtforcdn_nadv(:,:), mf_thlforc_nadv(:,:), mf_qtforc_nadv(:,:), ztopma(:,:)
-    real(kind_phys), intent(in) :: ts(:)
-!BAS end new variables
 
     ! Variables that contains all the statistics
     type (stats), intent(inout) :: &
@@ -786,6 +782,8 @@ module clubb
     real(kind_phys) :: rad2deg
 
     real(kind_phys) :: &
+      ustar2(ncol), &
+      rrho(ncol), &
       deltaz(ncol), &
       fcor(ncol), &                             ! Coriolis forcing                                          [s^-1]
       fcor_y(ncol), &                           ! Non-traditional coriolis forcing                          [s^-1]
