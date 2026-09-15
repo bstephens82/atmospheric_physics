@@ -521,7 +521,7 @@ module clubb
                         s_aww, s_awthlup, s_awqtup, s_awuup, s_awvup, s_awthldn, & ! inout
                         s_awqtdn, s_awudn, s_awvdn, mf_precc, mf_thlflxup, mf_qtflxup, & ! inout
                         mf_uflxup, mf_vflxup, mf_thlflxdn, mf_qtflxdn, mf_uflxdn, mf_vflxdn, & ! inout
-                        mf_uflx, mf_vflx, mf_thvflx, mf_rcm, mf_ent_nadv, & ! inout
+                        mf_uflx, mf_vflx, mf_thvflx, mf_rcm, mf_ent_nadv, mf_cloudfrac_zt, mf_qc_zt, & ! inout
                         mf_upa, mf_upw, mf_dnw, mf_upmf, mf_upqt, mf_dnqt, mf_upthl, mf_dnthl, & ! inout
                         mf_upthv, mf_upth, mf_upqc, mf_upbuoy, mf_updet, mf_upent, & ! inout
                         mf_thlforcup_nadv, mf_qtforcup_nadv, mf_thlforcdn_nadv, & ! inout
@@ -529,8 +529,7 @@ module clubb
                         ztopma, ztopmn, mf_sqtup, mf_sqtdn, prec_dp_pbuf, snow_dp_pbuf, ddcpmn, & ! inout
                         s_mfup_macmic, s_entup_macmic, s_detup_macmic, s_mfdn_macmic, s_entdn_macmic, & ! inout
                         s_detdn_macmic, s_awwup_macmic, s_awup_macmic, mf_sqtac_macmic, mf_sqtev_macmic, mf_kctop_macmic, & ! inout
-                        wup_gath, mf_cloudfrac_zt, mf_qc_zt, & ! inout
-                        rprddp, evapcdp, mu, md, du, eu, ed, dpg, dsubcld, jt, maxg, ideep, & ! inout
+                        rprddp, evapcdp, mu, md, du, eu, ed, dpg, dsubcld, jt, maxg, ideep, wup_gath, & ! inout
                         errmsg, errflg ) ! out
 
     use clubb_mf,              only: integrate_mf, do_clubb_mf, clubb_mf_nup, &
@@ -652,7 +651,7 @@ module clubb
     real(kind_phys), intent(inout) :: mf_qtforcdn_nadv(:,:), mf_thlforc_nadv(:,:), mf_qtforc_nadv(:,:), ztopma(:,:)
     real(kind_phys), intent(inout) :: s_mfup_macmic(:,:), s_entup_macmic(:,:), s_detup_macmic(:,:), s_mfdn_macmic(:,:)
     real(kind_phys), intent(inout) :: s_entdn_macmic(:,:), s_detdn_macmic(:,:), s_awwup_macmic(:,:), s_awup_macmic(:,:)
-    real(kind_phys), intent(inout) :: mf_sqtac_macmic(:,:), mf_sqtev_macmic(:,:), wup_gath(:,:)
+    real(kind_phys), intent(inout) :: mf_sqtac_macmic(:,:), mf_sqtev_macmic(:,:)
     real(kind_phys), intent(inout) :: mf_kctop_macmic(:)
 
     ! deep-hookup pbuf pointers
@@ -668,6 +667,7 @@ module clubb
     integer, intent(inout) :: jt(:)          ! Index of cloud top for each column (pcols)
     integer, intent(inout) :: maxg(:)        ! Index of cloud base for each column (pcols)
     integer, intent(inout) :: ideep(:)       ! Gathering array (pcols)
+    real(kind_phys), intent(inout) :: wup_gath(:,:)  ! Mass-flux-weighted ensemble updraft speed, gathered (pcols,pver)
 
     ! Variables that contains all the statistics
     type (stats), intent(inout) :: &
