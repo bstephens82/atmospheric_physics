@@ -4,29 +4,70 @@ subroutine test_mmm_physics_compat_init()
     use funit
     use mmm_physics_compat, only: mmm_physics_compat_init
 
-    integer :: isfflx, isftcflx, iz0tlnd
-    logical :: spp_pbl
+    integer :: icloud_bl, isfflx, isftcflx, iz0tlnd, spp_pbl
+    logical :: initial_run, cycling, restart
     real(kind_phys) :: xice_threshold
     character(100) :: errmsg
     integer :: errflg
 
+    initial_run = .true.
+
+    icloud_bl = huge(0)
     isfflx = huge(0)
     isftcflx = huge(0)
     iz0tlnd = huge(0)
-    spp_pbl = .false.
+    spp_pbl = huge(0)
+    cycling = .false.
+    restart = .false.
     xice_threshold = huge(0.0_kind_phys)
 
     call mmm_physics_compat_init( &
-        isfflx, isftcflx, iz0tlnd, &
-        spp_pbl, &
+        initial_run, &
+        icloud_bl, isfflx, isftcflx, iz0tlnd, spp_pbl, &
+        cycling, restart, &
         xice_threshold, &
         errmsg, errflg)
 
     ! Should set options to the same values as in the MPAS physics driver.
+    @assertEqual(0, icloud_bl)
     @assertEqual(1, isfflx)
     @assertEqual(0, isftcflx)
     @assertEqual(0, iz0tlnd)
-    @assertEqual(.false., spp_pbl)
+    @assertEqual(0, spp_pbl)
+    @assertFalse(cycling)
+    ! Opposite of `initial_run`.
+    @assertFalse(restart)
+    @assertEqual(0.02_kind_phys, xice_threshold)
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    initial_run = .false.
+
+    icloud_bl = huge(0)
+    isfflx = huge(0)
+    isftcflx = huge(0)
+    iz0tlnd = huge(0)
+    spp_pbl = huge(0)
+    cycling = .false.
+    restart = .false.
+    xice_threshold = huge(0.0_kind_phys)
+
+    call mmm_physics_compat_init( &
+        initial_run, &
+        icloud_bl, isfflx, isftcflx, iz0tlnd, spp_pbl, &
+        cycling, restart, &
+        xice_threshold, &
+        errmsg, errflg)
+
+    ! Should set options to the same values as in the MPAS physics driver.
+    @assertEqual(0, icloud_bl)
+    @assertEqual(1, isfflx)
+    @assertEqual(0, isftcflx)
+    @assertEqual(0, iz0tlnd)
+    @assertEqual(0, spp_pbl)
+    @assertFalse(cycling)
+    ! Opposite of `initial_run`.
+    @assertTrue(restart)
     @assertEqual(0.02_kind_phys, xice_threshold)
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
@@ -63,6 +104,7 @@ subroutine test_mmm_physics_compat_run()
     xice_threshold = 0.02_kind_phys
     landfrac(1:50) = [(0.01_kind_phys + real(i - 1, kind_phys) * 0.02_kind_phys, i = 1, 50)]
     landfrac(51:100) = 0.0_kind_phys
+
     scheme_name = ''
     rthdynten(:, :) = huge(0.0_kind_phys)
     rqvdynten(:, :) = huge(0.0_kind_phys)
@@ -79,7 +121,7 @@ subroutine test_mmm_physics_compat_run()
         errmsg, errflg)
 
     ! Should set scheme name.
-    @assertEqual('mmm_physics_compat_run', scheme_name)
+    @assertEqual('mmm_physics_compat', scheme_name)
     ! Tendencies should be zero at start (nstep = 0).
     @assertEqual(0.0_kind_phys, rthdynten)
     @assertEqual(0.0_kind_phys, rqvdynten)
@@ -109,10 +151,10 @@ subroutine test_mmm_physics_compat_run()
         errmsg, errflg)
 
     ! Should set scheme name.
-    @assertEqual('mmm_physics_compat_run', scheme_name)
+    @assertEqual('mmm_physics_compat', scheme_name)
     ! Should compute tendencies correctly afterwards (nstep > 0).
-    @assertEqual(1.0_kind_phys, rthdynten, epsilon(0.0_kind_phys))
-    @assertEqual(0.001_kind_phys, rqvdynten, epsilon(0.0_kind_phys))
+    @assertEqual(1.0_kind_phys, rthdynten, spacing(1.0_kind_phys))
+    @assertEqual(0.001_kind_phys, rqvdynten, spacing(0.001_kind_phys))
     ! Should set land mask according to ice and land fractions.
     @assertEqual(2.0_kind_phys, xland(1:25))
     @assertEqual(1.0_kind_phys, xland(26:50))
@@ -133,8 +175,11 @@ subroutine test_mmm_physics_accumulate_tendencies_timestep_init()
     real(kind_phys) :: rublten(ncol, pver), rucuten(ncol, pver), rvblten(ncol, pver), rvcuten(ncol, pver)
     real(kind_phys) :: rthblten(ncol, pver), rthcuten(ncol, pver), rthratenlw(ncol, pver), rthratensw(ncol, pver)
     real(kind_phys) :: rqvblten(ncol, pver), rqvcuten(ncol, pver)
-    real(kind_phys) :: rqccuten(ncol, pver)
-    real(kind_phys) :: rqicuten(ncol, pver)
+    real(kind_phys) :: rqcblten(ncol, pver), rncblten(ncol, pver), rqccuten(ncol, pver)
+    real(kind_phys) :: rqiblten(ncol, pver), rniblten(ncol, pver), rqicuten(ncol, pver)
+    real(kind_phys) :: rqsblten(ncol, pver)
+    real(kind_phys) :: rozblten(ncol, pver)
+    real(kind_phys) :: rnwfablten(ncol, pver), rnifablten(ncol, pver), rnbcablten(ncol, pver)
     character(100) :: errmsg
     integer :: errflg
 
@@ -155,17 +200,32 @@ subroutine test_mmm_physics_accumulate_tendencies_timestep_init()
     rqvblten(:, :) = huge(0.0_kind_phys)
     rqvcuten(:, :) = huge(0.0_kind_phys)
 
+    rqcblten(:, :) = huge(0.0_kind_phys)
+    rncblten(:, :) = huge(0.0_kind_phys)
     rqccuten(:, :) = huge(0.0_kind_phys)
 
+    rqiblten(:, :) = huge(0.0_kind_phys)
+    rniblten(:, :) = huge(0.0_kind_phys)
     rqicuten(:, :) = huge(0.0_kind_phys)
+
+    rqsblten(:, :) = huge(0.0_kind_phys)
+
+    rozblten(:, :) = huge(0.0_kind_phys)
+
+    rnwfablten(:, :) = huge(0.0_kind_phys)
+    rnifablten(:, :) = huge(0.0_kind_phys)
+    rnbcablten(:, :) = huge(0.0_kind_phys)
 
     call mmm_physics_accumulate_tendencies_timestep_init( &
         dudt, dvdt, dtdt, &
         rublten, rucuten, rvblten, rvcuten, &
         rthblten, rthcuten, rthratenlw, rthratensw, &
         rqvblten, rqvcuten, &
-        rqccuten, &
-        rqicuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
         errmsg, errflg)
 
     ! Everything should be zeroed out.
@@ -186,9 +246,21 @@ subroutine test_mmm_physics_accumulate_tendencies_timestep_init()
     @assertEqual(0.0_kind_phys, rqvblten)
     @assertEqual(0.0_kind_phys, rqvcuten)
 
+    @assertEqual(0.0_kind_phys, rqcblten)
+    @assertEqual(0.0_kind_phys, rncblten)
     @assertEqual(0.0_kind_phys, rqccuten)
 
+    @assertEqual(0.0_kind_phys, rqiblten)
+    @assertEqual(0.0_kind_phys, rniblten)
     @assertEqual(0.0_kind_phys, rqicuten)
+
+    @assertEqual(0.0_kind_phys, rqsblten)
+
+    @assertEqual(0.0_kind_phys, rozblten)
+
+    @assertEqual(0.0_kind_phys, rnwfablten)
+    @assertEqual(0.0_kind_phys, rnifablten)
+    @assertEqual(0.0_kind_phys, rnbcablten)
 
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
@@ -203,12 +275,16 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     integer, parameter :: ncol = 100, pver = 10
     real(kind_phys) :: dt, exner(ncol, pver)
     real(kind_phys) :: dudt(ncol, pver), dvdt(ncol, pver), dtdt(ncol, pver)
-    real(kind_phys) :: theta(ncol, pver), qv(ncol, pver), qc(ncol, pver), qi(ncol, pver)
+    real(kind_phys) :: theta(ncol, pver), qv(ncol, pver), qc(ncol, pver), qi(ncol, pver), qs(ncol, pver), ozone(ncol, pver)
+    real(kind_phys) :: nc(ncol, pver), ni(ncol, pver), nwfa(ncol, pver), nifa(ncol, pver), nbca(ncol, pver)
     real(kind_phys) :: rublten(ncol, pver), rucuten(ncol, pver), rvblten(ncol, pver), rvcuten(ncol, pver)
     real(kind_phys) :: rthblten(ncol, pver), rthcuten(ncol, pver), rthratenlw(ncol, pver), rthratensw(ncol, pver)
     real(kind_phys) :: rqvblten(ncol, pver), rqvcuten(ncol, pver)
-    real(kind_phys) :: rqccuten(ncol, pver)
-    real(kind_phys) :: rqicuten(ncol, pver)
+    real(kind_phys) :: rqcblten(ncol, pver), rncblten(ncol, pver), rqccuten(ncol, pver)
+    real(kind_phys) :: rqiblten(ncol, pver), rniblten(ncol, pver), rqicuten(ncol, pver)
+    real(kind_phys) :: rqsblten(ncol, pver)
+    real(kind_phys) :: rozblten(ncol, pver)
+    real(kind_phys) :: rnwfablten(ncol, pver), rnifablten(ncol, pver), rnbcablten(ncol, pver)
     character(100) :: errmsg
     integer :: errflg
 
@@ -223,6 +299,14 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     qv(:, :) = 0.01_kind_phys
     qc(:, :) = 0.01_kind_phys
     qi(:, :) = 0.01_kind_phys
+    qs(:, :) = 0.01_kind_phys
+    ozone(:, :) = 1.0E-8_kind_phys
+
+    nc(:, :) = 1.0E8_kind_phys
+    ni(:, :) = 1.0E6_kind_phys
+    nwfa(:, :) = 1.0E8_kind_phys
+    nifa(:, :) = 1.0E8_kind_phys
+    nbca(:, :) = 1.0E8_kind_phys
 
     rublten(:, :) = 0.1_kind_phys
     rucuten(:, :) = 0.1_kind_phys
@@ -237,32 +321,56 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     rqvblten(:, :) = 0.00025_kind_phys
     rqvcuten(:, :) = 0.00025_kind_phys
 
+    rqcblten(:, :) = 0.00025_kind_phys
+    rncblten(:, :) = 25000.0_kind_phys
     rqccuten(:, :) = 0.00025_kind_phys
 
+    rqiblten(:, :) = 0.00025_kind_phys
+    rniblten(:, :) = 250.0_kind_phys
     rqicuten(:, :) = 0.00025_kind_phys
+
+    rqsblten(:, :) = 0.00025_kind_phys
+
+    rozblten(:, :) = 2.5E-10_kind_phys
+
+    rnwfablten(:, :) = 25000.0_kind_phys
+    rnifablten(:, :) = 25000.0_kind_phys
+    rnbcablten(:, :) = 25000.0_kind_phys
 
     call mmm_physics_accumulate_tendencies_run( &
         dt, exner, &
         dudt, dvdt, dtdt, &
-        theta, qv, qc, qi, &
+        theta, qv, qc, qi, qs, ozone, &
+        nc, ni, nwfa, nifa, nbca, &
         rublten, rucuten, rvblten, rvcuten, &
         rthblten, rthcuten, rthratenlw, rthratensw, &
         rqvblten, rqvcuten, &
-        rqccuten, &
-        rqicuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
         errmsg, errflg)
 
-    ! Should accumulate MMM tendencies into CAM-SIMA ones.
-    @assertEqual(0.2_kind_phys, dudt, epsilon(0.0_kind_phys))
-    @assertEqual(0.2_kind_phys, dvdt, epsilon(0.0_kind_phys))
-    @assertEqual(0.4_kind_phys, dtdt, epsilon(0.0_kind_phys))
+    ! Should accumulate MMM tendencies into the equivalent CAM-SIMA ones correctly.
+    @assertEqual(0.2_kind_phys, dudt, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, dvdt, spacing(0.2_kind_phys))
+    @assertEqual(0.4_kind_phys, dtdt, spacing(0.4_kind_phys))
 
-    @assertEqual(281.15_kind_phys, theta, epsilon(0.0_kind_phys))
-    @assertEqual(0.02_kind_phys, qv, epsilon(0.0_kind_phys))
-    @assertEqual(0.015_kind_phys, qc, epsilon(0.0_kind_phys))
-    @assertEqual(0.015_kind_phys, qi, epsilon(0.0_kind_phys))
+    @assertEqual(281.15_kind_phys, theta, spacing(281.15_kind_phys))
+    @assertEqual(0.02_kind_phys, qv, spacing(0.02_kind_phys))
+    @assertEqual(0.02_kind_phys, qc, spacing(0.02_kind_phys))
+    @assertEqual(0.02_kind_phys, qi, spacing(0.02_kind_phys))
+    @assertEqual(0.015_kind_phys, qs, spacing(0.015_kind_phys))
+    @assertEqual(1.5E-8_kind_phys, ozone, spacing(1.5E-8_kind_phys))
 
-    ! After the accumulation, tendencies should be zeroed out.
+    @assertEqual(1.005E8_kind_phys, nc, spacing(1.005E8_kind_phys))
+    @assertEqual(1.005E6_kind_phys, ni, spacing(1.005E6_kind_phys))
+    @assertEqual(1.005E8_kind_phys, nwfa, spacing(1.005E8_kind_phys))
+    @assertEqual(1.005E8_kind_phys, nifa, spacing(1.005E8_kind_phys))
+    @assertEqual(1.005E8_kind_phys, nbca, spacing(1.005E8_kind_phys))
+
+    ! After accumulating, MMM tendencies should be zeroed out.
     @assertEqual(0.0_kind_phys, rublten)
     @assertEqual(0.0_kind_phys, rucuten)
     @assertEqual(0.0_kind_phys, rvblten)
@@ -276,9 +384,21 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     @assertEqual(0.0_kind_phys, rqvblten)
     @assertEqual(0.0_kind_phys, rqvcuten)
 
+    @assertEqual(0.0_kind_phys, rqcblten)
+    @assertEqual(0.0_kind_phys, rncblten)
     @assertEqual(0.0_kind_phys, rqccuten)
 
+    @assertEqual(0.0_kind_phys, rqiblten)
+    @assertEqual(0.0_kind_phys, rniblten)
     @assertEqual(0.0_kind_phys, rqicuten)
+
+    @assertEqual(0.0_kind_phys, rqsblten)
+
+    @assertEqual(0.0_kind_phys, rozblten)
+
+    @assertEqual(0.0_kind_phys, rnwfablten)
+    @assertEqual(0.0_kind_phys, rnifablten)
+    @assertEqual(0.0_kind_phys, rnbcablten)
 
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
@@ -296,32 +416,56 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     rqvblten(:, :) = 0.00025_kind_phys
     rqvcuten(:, :) = 0.00025_kind_phys
 
+    rqcblten(:, :) = 0.00025_kind_phys
+    rncblten(:, :) = 25000.0_kind_phys
     rqccuten(:, :) = 0.00025_kind_phys
 
+    rqiblten(:, :) = 0.00025_kind_phys
+    rniblten(:, :) = 250.0_kind_phys
     rqicuten(:, :) = 0.00025_kind_phys
+
+    rqsblten(:, :) = 0.00025_kind_phys
+
+    rozblten(:, :) = 2.5E-10_kind_phys
+
+    rnwfablten(:, :) = 25000.0_kind_phys
+    rnifablten(:, :) = 25000.0_kind_phys
+    rnbcablten(:, :) = 25000.0_kind_phys
 
     call mmm_physics_accumulate_tendencies_run( &
         dt, exner, &
         dudt, dvdt, dtdt, &
-        theta, qv, qc, qi, &
+        theta, qv, qc, qi, qs, ozone, &
+        nc, ni, nwfa, nifa, nbca, &
         rublten, rucuten, rvblten, rvcuten, &
         rthblten, rthcuten, rthratenlw, rthratensw, &
         rqvblten, rqvcuten, &
-        rqccuten, &
-        rqicuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
         errmsg, errflg)
 
-    ! Should accumulate MMM tendencies into CAM-SIMA ones.
-    @assertEqual(0.4_kind_phys, dudt, epsilon(0.0_kind_phys))
-    @assertEqual(0.4_kind_phys, dvdt, epsilon(0.0_kind_phys))
-    @assertEqual(0.8_kind_phys, dtdt, epsilon(0.0_kind_phys))
+    ! Should accumulate MMM tendencies into the equivalent CAM-SIMA ones correctly.
+    @assertEqual(0.4_kind_phys, dudt, spacing(0.4_kind_phys))
+    @assertEqual(0.4_kind_phys, dvdt, spacing(0.4_kind_phys))
+    @assertEqual(0.8_kind_phys, dtdt, spacing(0.8_kind_phys))
 
-    @assertEqual(289.15_kind_phys, theta, epsilon(0.0_kind_phys))
-    @assertEqual(0.03_kind_phys, qv, epsilon(0.0_kind_phys))
-    @assertEqual(0.02_kind_phys, qc, epsilon(0.0_kind_phys))
-    @assertEqual(0.02_kind_phys, qi, epsilon(0.0_kind_phys))
+    @assertEqual(289.15_kind_phys, theta, spacing(289.15_kind_phys))
+    @assertEqual(0.03_kind_phys, qv, spacing(0.03_kind_phys))
+    @assertEqual(0.03_kind_phys, qc, spacing(0.03_kind_phys))
+    @assertEqual(0.03_kind_phys, qi, spacing(0.03_kind_phys))
+    @assertEqual(0.02_kind_phys, qs, spacing(0.02_kind_phys))
+    @assertEqual(2.0E-8_kind_phys, ozone, spacing(2.0E-8_kind_phys))
 
-    ! After the accumulation, tendencies should be zeroed out.
+    @assertEqual(1.01E8_kind_phys, nc, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E6_kind_phys, ni, spacing(1.01E6_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nwfa, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nifa, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nbca, spacing(1.01E8_kind_phys))
+
+    ! After accumulating, MMM tendencies should be zeroed out.
     @assertEqual(0.0_kind_phys, rublten)
     @assertEqual(0.0_kind_phys, rucuten)
     @assertEqual(0.0_kind_phys, rvblten)
@@ -335,9 +479,21 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     @assertEqual(0.0_kind_phys, rqvblten)
     @assertEqual(0.0_kind_phys, rqvcuten)
 
+    @assertEqual(0.0_kind_phys, rqcblten)
+    @assertEqual(0.0_kind_phys, rncblten)
     @assertEqual(0.0_kind_phys, rqccuten)
 
+    @assertEqual(0.0_kind_phys, rqiblten)
+    @assertEqual(0.0_kind_phys, rniblten)
     @assertEqual(0.0_kind_phys, rqicuten)
+
+    @assertEqual(0.0_kind_phys, rqsblten)
+
+    @assertEqual(0.0_kind_phys, rozblten)
+
+    @assertEqual(0.0_kind_phys, rnwfablten)
+    @assertEqual(0.0_kind_phys, rnifablten)
+    @assertEqual(0.0_kind_phys, rnbcablten)
 
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
@@ -345,35 +501,52 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     call mmm_physics_accumulate_tendencies_run( &
         dt, exner, &
         dudt, dvdt, dtdt, &
-        theta, qv, qc, qi, &
+        theta, qv, qc, qi, qs, ozone, &
+        nc, ni, nwfa, nifa, nbca, &
         rublten, rucuten, rvblten, rvcuten, &
         rthblten, rthcuten, rthratenlw, rthratensw, &
         rqvblten, rqvcuten, &
-        rqccuten, &
-        rqicuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
         errmsg, errflg)
 
     call mmm_physics_accumulate_tendencies_run( &
         dt, exner, &
         dudt, dvdt, dtdt, &
-        theta, qv, qc, qi, &
+        theta, qv, qc, qi, qs, ozone, &
+        nc, ni, nwfa, nifa, nbca, &
         rublten, rucuten, rvblten, rvcuten, &
         rthblten, rthcuten, rthratenlw, rthratensw, &
         rqvblten, rqvcuten, &
-        rqccuten, &
-        rqicuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
         errmsg, errflg)
 
     ! Consecutive calls should be idempotent.
-    @assertEqual(0.4_kind_phys, dudt, epsilon(0.0_kind_phys))
-    @assertEqual(0.4_kind_phys, dvdt, epsilon(0.0_kind_phys))
-    @assertEqual(0.8_kind_phys, dtdt, epsilon(0.0_kind_phys))
+    @assertEqual(0.4_kind_phys, dudt, spacing(0.4_kind_phys))
+    @assertEqual(0.4_kind_phys, dvdt, spacing(0.4_kind_phys))
+    @assertEqual(0.8_kind_phys, dtdt, spacing(0.8_kind_phys))
 
-    @assertEqual(289.15_kind_phys, theta, epsilon(0.0_kind_phys))
-    @assertEqual(0.03_kind_phys, qv, epsilon(0.0_kind_phys))
-    @assertEqual(0.02_kind_phys, qc, epsilon(0.0_kind_phys))
-    @assertEqual(0.02_kind_phys, qi, epsilon(0.0_kind_phys))
+    @assertEqual(289.15_kind_phys, theta, spacing(289.15_kind_phys))
+    @assertEqual(0.03_kind_phys, qv, spacing(0.03_kind_phys))
+    @assertEqual(0.03_kind_phys, qc, spacing(0.03_kind_phys))
+    @assertEqual(0.03_kind_phys, qi, spacing(0.03_kind_phys))
+    @assertEqual(0.02_kind_phys, qs, spacing(0.02_kind_phys))
+    @assertEqual(2.0E-8_kind_phys, ozone, spacing(2.0E-8_kind_phys))
 
+    @assertEqual(1.01E8_kind_phys, nc, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E6_kind_phys, ni, spacing(1.01E6_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nwfa, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nifa, spacing(1.01E8_kind_phys))
+    @assertEqual(1.01E8_kind_phys, nbca, spacing(1.01E8_kind_phys))
+
+    ! Consecutive calls should be idempotent.
     @assertEqual(0.0_kind_phys, rublten)
     @assertEqual(0.0_kind_phys, rucuten)
     @assertEqual(0.0_kind_phys, rvblten)
@@ -387,13 +560,570 @@ subroutine test_mmm_physics_accumulate_tendencies_run()
     @assertEqual(0.0_kind_phys, rqvblten)
     @assertEqual(0.0_kind_phys, rqvcuten)
 
+    @assertEqual(0.0_kind_phys, rqcblten)
+    @assertEqual(0.0_kind_phys, rncblten)
     @assertEqual(0.0_kind_phys, rqccuten)
 
+    @assertEqual(0.0_kind_phys, rqiblten)
+    @assertEqual(0.0_kind_phys, rniblten)
     @assertEqual(0.0_kind_phys, rqicuten)
+
+    @assertEqual(0.0_kind_phys, rqsblten)
+
+    @assertEqual(0.0_kind_phys, rozblten)
+
+    @assertEqual(0.0_kind_phys, rnwfablten)
+    @assertEqual(0.0_kind_phys, rnifablten)
+    @assertEqual(0.0_kind_phys, rnbcablten)
 
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
 end subroutine test_mmm_physics_accumulate_tendencies_run
+
+@test
+subroutine test_mmm_physics_save_tendencies_timestep_init()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: mmm_physics_save_tendencies_timestep_init
+
+    integer, parameter :: ncol = 100, pver = 10
+    real(kind_phys) :: rublten_p(ncol, pver), rucuten_p(ncol, pver), rvblten_p(ncol, pver), rvcuten_p(ncol, pver)
+    real(kind_phys) :: rthblten_p(ncol, pver), rthcuten_p(ncol, pver), rthratenlw_p(ncol, pver), rthratensw_p(ncol, pver)
+    real(kind_phys) :: rqvblten_p(ncol, pver), rqvcuten_p(ncol, pver)
+    real(kind_phys) :: rqcblten_p(ncol, pver), rncblten_p(ncol, pver), rqccuten_p(ncol, pver)
+    real(kind_phys) :: rqiblten_p(ncol, pver), rniblten_p(ncol, pver), rqicuten_p(ncol, pver)
+    real(kind_phys) :: rqsblten_p(ncol, pver)
+    real(kind_phys) :: rozblten_p(ncol, pver)
+    real(kind_phys) :: rnwfablten_p(ncol, pver), rnifablten_p(ncol, pver), rnbcablten_p(ncol, pver)
+    real(kind_phys) :: rublten(ncol, pver), rucuten(ncol, pver), rvblten(ncol, pver), rvcuten(ncol, pver)
+    real(kind_phys) :: rthblten(ncol, pver), rthcuten(ncol, pver), rthratenlw(ncol, pver), rthratensw(ncol, pver)
+    real(kind_phys) :: rqvblten(ncol, pver), rqvcuten(ncol, pver)
+    real(kind_phys) :: rqcblten(ncol, pver), rncblten(ncol, pver), rqccuten(ncol, pver)
+    real(kind_phys) :: rqiblten(ncol, pver), rniblten(ncol, pver), rqicuten(ncol, pver)
+    real(kind_phys) :: rqsblten(ncol, pver)
+    real(kind_phys) :: rozblten(ncol, pver)
+    real(kind_phys) :: rnwfablten(ncol, pver), rnifablten(ncol, pver), rnbcablten(ncol, pver)
+    character(100) :: errmsg
+    integer :: errflg
+
+    rublten_p(:, :) = huge(0.0_kind_phys)
+    rucuten_p(:, :) = huge(0.0_kind_phys)
+    rvblten_p(:, :) = huge(0.0_kind_phys)
+    rvcuten_p(:, :) = huge(0.0_kind_phys)
+
+    rthblten_p(:, :) = huge(0.0_kind_phys)
+    rthcuten_p(:, :) = huge(0.0_kind_phys)
+    rthratenlw_p(:, :) = huge(0.0_kind_phys)
+    rthratensw_p(:, :) = huge(0.0_kind_phys)
+
+    rqvblten_p(:, :) = huge(0.0_kind_phys)
+    rqvcuten_p(:, :) = huge(0.0_kind_phys)
+
+    rqcblten_p(:, :) = huge(0.0_kind_phys)
+    rncblten_p(:, :) = huge(0.0_kind_phys)
+    rqccuten_p(:, :) = huge(0.0_kind_phys)
+
+    rqiblten_p(:, :) = huge(0.0_kind_phys)
+    rniblten_p(:, :) = huge(0.0_kind_phys)
+    rqicuten_p(:, :) = huge(0.0_kind_phys)
+
+    rqsblten_p(:, :) = huge(0.0_kind_phys)
+
+    rozblten_p(:, :) = huge(0.0_kind_phys)
+
+    rnwfablten_p(:, :) = huge(0.0_kind_phys)
+    rnifablten_p(:, :) = huge(0.0_kind_phys)
+    rnbcablten_p(:, :) = huge(0.0_kind_phys)
+
+    rublten(:, :) = huge(0.0_kind_phys)
+    rucuten(:, :) = huge(0.0_kind_phys)
+    rvblten(:, :) = huge(0.0_kind_phys)
+    rvcuten(:, :) = huge(0.0_kind_phys)
+
+    rthblten(:, :) = huge(0.0_kind_phys)
+    rthcuten(:, :) = huge(0.0_kind_phys)
+    rthratenlw(:, :) = huge(0.0_kind_phys)
+    rthratensw(:, :) = huge(0.0_kind_phys)
+
+    rqvblten(:, :) = huge(0.0_kind_phys)
+    rqvcuten(:, :) = huge(0.0_kind_phys)
+
+    rqcblten(:, :) = huge(0.0_kind_phys)
+    rncblten(:, :) = huge(0.0_kind_phys)
+    rqccuten(:, :) = huge(0.0_kind_phys)
+
+    rqiblten(:, :) = huge(0.0_kind_phys)
+    rniblten(:, :) = huge(0.0_kind_phys)
+    rqicuten(:, :) = huge(0.0_kind_phys)
+
+    rqsblten(:, :) = huge(0.0_kind_phys)
+
+    rozblten(:, :) = huge(0.0_kind_phys)
+
+    rnwfablten(:, :) = huge(0.0_kind_phys)
+    rnifablten(:, :) = huge(0.0_kind_phys)
+    rnbcablten(:, :) = huge(0.0_kind_phys)
+
+    call mmm_physics_save_tendencies_timestep_init( &
+        rublten_p, rucuten_p, rvblten_p, rvcuten_p, &
+        rthblten_p, rthcuten_p, rthratenlw_p, rthratensw_p, &
+        rqvblten_p, rqvcuten_p, &
+        rqcblten_p, rncblten_p, rqccuten_p, &
+        rqiblten_p, rniblten_p, rqicuten_p, &
+        rqsblten_p, &
+        rozblten_p, &
+        rnwfablten_p, rnifablten_p, rnbcablten_p, &
+        rublten, rucuten, rvblten, rvcuten, &
+        rthblten, rthcuten, rthratenlw, rthratensw, &
+        rqvblten, rqvcuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
+        errmsg, errflg)
+
+    ! Everything should be zeroed out.
+    @assertEqual(0.0_kind_phys, rublten_p)
+    @assertEqual(0.0_kind_phys, rucuten_p)
+    @assertEqual(0.0_kind_phys, rvblten_p)
+    @assertEqual(0.0_kind_phys, rvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rthblten_p)
+    @assertEqual(0.0_kind_phys, rthcuten_p)
+    @assertEqual(0.0_kind_phys, rthratenlw_p)
+    @assertEqual(0.0_kind_phys, rthratensw_p)
+
+    @assertEqual(0.0_kind_phys, rqvblten_p)
+    @assertEqual(0.0_kind_phys, rqvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rqcblten_p)
+    @assertEqual(0.0_kind_phys, rncblten_p)
+    @assertEqual(0.0_kind_phys, rqccuten_p)
+
+    @assertEqual(0.0_kind_phys, rqiblten_p)
+    @assertEqual(0.0_kind_phys, rniblten_p)
+    @assertEqual(0.0_kind_phys, rqicuten_p)
+
+    @assertEqual(0.0_kind_phys, rqsblten_p)
+
+    @assertEqual(0.0_kind_phys, rozblten_p)
+
+    @assertEqual(0.0_kind_phys, rnwfablten_p)
+    @assertEqual(0.0_kind_phys, rnifablten_p)
+    @assertEqual(0.0_kind_phys, rnbcablten_p)
+
+    @assertEqual(0.0_kind_phys, rublten)
+    @assertEqual(0.0_kind_phys, rucuten)
+    @assertEqual(0.0_kind_phys, rvblten)
+    @assertEqual(0.0_kind_phys, rvcuten)
+
+    @assertEqual(0.0_kind_phys, rthblten)
+    @assertEqual(0.0_kind_phys, rthcuten)
+    @assertEqual(0.0_kind_phys, rthratenlw)
+    @assertEqual(0.0_kind_phys, rthratensw)
+
+    @assertEqual(0.0_kind_phys, rqvblten)
+    @assertEqual(0.0_kind_phys, rqvcuten)
+
+    @assertEqual(0.0_kind_phys, rqcblten)
+    @assertEqual(0.0_kind_phys, rncblten)
+    @assertEqual(0.0_kind_phys, rqccuten)
+
+    @assertEqual(0.0_kind_phys, rqiblten)
+    @assertEqual(0.0_kind_phys, rniblten)
+    @assertEqual(0.0_kind_phys, rqicuten)
+
+    @assertEqual(0.0_kind_phys, rqsblten)
+
+    @assertEqual(0.0_kind_phys, rozblten)
+
+    @assertEqual(0.0_kind_phys, rnwfablten)
+    @assertEqual(0.0_kind_phys, rnifablten)
+    @assertEqual(0.0_kind_phys, rnbcablten)
+
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_mmm_physics_save_tendencies_timestep_init
+
+@test
+subroutine test_mmm_physics_save_tendencies_run()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: mmm_physics_save_tendencies_run
+
+    integer, parameter :: ncol = 100, pver = 10
+    real(kind_phys) :: rublten_p(ncol, pver), rucuten_p(ncol, pver), rvblten_p(ncol, pver), rvcuten_p(ncol, pver)
+    real(kind_phys) :: rthblten_p(ncol, pver), rthcuten_p(ncol, pver), rthratenlw_p(ncol, pver), rthratensw_p(ncol, pver)
+    real(kind_phys) :: rqvblten_p(ncol, pver), rqvcuten_p(ncol, pver)
+    real(kind_phys) :: rqcblten_p(ncol, pver), rncblten_p(ncol, pver), rqccuten_p(ncol, pver)
+    real(kind_phys) :: rqiblten_p(ncol, pver), rniblten_p(ncol, pver), rqicuten_p(ncol, pver)
+    real(kind_phys) :: rqsblten_p(ncol, pver)
+    real(kind_phys) :: rozblten_p(ncol, pver)
+    real(kind_phys) :: rnwfablten_p(ncol, pver), rnifablten_p(ncol, pver), rnbcablten_p(ncol, pver)
+    real(kind_phys) :: rublten(ncol, pver), rucuten(ncol, pver), rvblten(ncol, pver), rvcuten(ncol, pver)
+    real(kind_phys) :: rthblten(ncol, pver), rthcuten(ncol, pver), rthratenlw(ncol, pver), rthratensw(ncol, pver)
+    real(kind_phys) :: rqvblten(ncol, pver), rqvcuten(ncol, pver)
+    real(kind_phys) :: rqcblten(ncol, pver), rncblten(ncol, pver), rqccuten(ncol, pver)
+    real(kind_phys) :: rqiblten(ncol, pver), rniblten(ncol, pver), rqicuten(ncol, pver)
+    real(kind_phys) :: rqsblten(ncol, pver)
+    real(kind_phys) :: rozblten(ncol, pver)
+    real(kind_phys) :: rnwfablten(ncol, pver), rnifablten(ncol, pver), rnbcablten(ncol, pver)
+    character(100) :: errmsg
+    integer :: errflg
+
+    rublten_p(:, :) = 0.1_kind_phys
+    rucuten_p(:, :) = 0.1_kind_phys
+    rvblten_p(:, :) = 0.1_kind_phys
+    rvcuten_p(:, :) = 0.1_kind_phys
+
+    rthblten_p(:, :) = 0.1_kind_phys
+    rthcuten_p(:, :) = 0.1_kind_phys
+    rthratenlw_p(:, :) = 0.1_kind_phys
+    rthratensw_p(:, :) = 0.1_kind_phys
+
+    rqvblten_p(:, :) = 0.00025_kind_phys
+    rqvcuten_p(:, :) = 0.00025_kind_phys
+
+    rqcblten_p(:, :) = 0.00025_kind_phys
+    rncblten_p(:, :) = 25000.0_kind_phys
+    rqccuten_p(:, :) = 0.00025_kind_phys
+
+    rqiblten_p(:, :) = 0.00025_kind_phys
+    rniblten_p(:, :) = 250.0_kind_phys
+    rqicuten_p(:, :) = 0.00025_kind_phys
+
+    rqsblten_p(:, :) = 0.00025_kind_phys
+
+    rozblten_p(:, :) = 2.5E-10_kind_phys
+
+    rnwfablten_p(:, :) = 25000.0_kind_phys
+    rnifablten_p(:, :) = 25000.0_kind_phys
+    rnbcablten_p(:, :) = 25000.0_kind_phys
+
+    rublten(:, :) = 0.0_kind_phys
+    rucuten(:, :) = 0.0_kind_phys
+    rvblten(:, :) = 0.0_kind_phys
+    rvcuten(:, :) = 0.0_kind_phys
+
+    rthblten(:, :) = 0.0_kind_phys
+    rthcuten(:, :) = 0.0_kind_phys
+    rthratenlw(:, :) = 0.0_kind_phys
+    rthratensw(:, :) = 0.0_kind_phys
+
+    rqvblten(:, :) = 0.0_kind_phys
+    rqvcuten(:, :) = 0.0_kind_phys
+
+    rqcblten(:, :) = 0.0_kind_phys
+    rncblten(:, :) = 0.0_kind_phys
+    rqccuten(:, :) = 0.0_kind_phys
+
+    rqiblten(:, :) = 0.0_kind_phys
+    rniblten(:, :) = 0.0_kind_phys
+    rqicuten(:, :) = 0.0_kind_phys
+
+    rqsblten(:, :) = 0.0_kind_phys
+
+    rozblten(:, :) = 0.0_kind_phys
+
+    rnwfablten(:, :) = 0.0_kind_phys
+    rnifablten(:, :) = 0.0_kind_phys
+    rnbcablten(:, :) = 0.0_kind_phys
+
+    call mmm_physics_save_tendencies_run( &
+        rublten_p, rucuten_p, rvblten_p, rvcuten_p, &
+        rthblten_p, rthcuten_p, rthratenlw_p, rthratensw_p, &
+        rqvblten_p, rqvcuten_p, &
+        rqcblten_p, rncblten_p, rqccuten_p, &
+        rqiblten_p, rniblten_p, rqicuten_p, &
+        rqsblten_p, &
+        rozblten_p, &
+        rnwfablten_p, rnifablten_p, rnbcablten_p, &
+        rublten, rucuten, rvblten, rvcuten, &
+        rthblten, rthcuten, rthratenlw, rthratensw, &
+        rqvblten, rqvcuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
+        errmsg, errflg)
+
+    ! Should save pending tendencies to final tendencies correctly.
+    @assertEqual(0.1_kind_phys, rublten, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rucuten, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rvblten, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rvcuten, spacing(0.1_kind_phys))
+
+    @assertEqual(0.1_kind_phys, rthblten, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rthcuten, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rthratenlw, spacing(0.1_kind_phys))
+    @assertEqual(0.1_kind_phys, rthratensw, spacing(0.1_kind_phys))
+
+    @assertEqual(0.00025_kind_phys, rqvblten, spacing(0.00025_kind_phys))
+    @assertEqual(0.00025_kind_phys, rqvcuten, spacing(0.00025_kind_phys))
+
+    @assertEqual(0.00025_kind_phys, rqcblten, spacing(0.00025_kind_phys))
+    @assertEqual(25000.0_kind_phys, rncblten, spacing(25000.0_kind_phys))
+    @assertEqual(0.00025_kind_phys, rqccuten, spacing(0.00025_kind_phys))
+
+    @assertEqual(0.00025_kind_phys, rqiblten, spacing(0.00025_kind_phys))
+    @assertEqual(250.0_kind_phys, rniblten, spacing(250.0_kind_phys))
+    @assertEqual(0.00025_kind_phys, rqicuten, spacing(0.00025_kind_phys))
+
+    @assertEqual(0.00025_kind_phys, rqsblten, spacing(0.00025_kind_phys))
+
+    @assertEqual(2.5E-10_kind_phys, rozblten, spacing(2.5E-10_kind_phys))
+
+    @assertEqual(25000.0_kind_phys, rnwfablten, spacing(25000.0_kind_phys))
+    @assertEqual(25000.0_kind_phys, rnifablten, spacing(25000.0_kind_phys))
+    @assertEqual(25000.0_kind_phys, rnbcablten, spacing(25000.0_kind_phys))
+
+    ! After saving, pending tendencies should be zeroed out.
+    @assertEqual(0.0_kind_phys, rublten_p)
+    @assertEqual(0.0_kind_phys, rucuten_p)
+    @assertEqual(0.0_kind_phys, rvblten_p)
+    @assertEqual(0.0_kind_phys, rvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rthblten_p)
+    @assertEqual(0.0_kind_phys, rthcuten_p)
+    @assertEqual(0.0_kind_phys, rthratenlw_p)
+    @assertEqual(0.0_kind_phys, rthratensw_p)
+
+    @assertEqual(0.0_kind_phys, rqvblten_p)
+    @assertEqual(0.0_kind_phys, rqvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rqcblten_p)
+    @assertEqual(0.0_kind_phys, rncblten_p)
+    @assertEqual(0.0_kind_phys, rqccuten_p)
+
+    @assertEqual(0.0_kind_phys, rqiblten_p)
+    @assertEqual(0.0_kind_phys, rniblten_p)
+    @assertEqual(0.0_kind_phys, rqicuten_p)
+
+    @assertEqual(0.0_kind_phys, rqsblten_p)
+
+    @assertEqual(0.0_kind_phys, rozblten_p)
+
+    @assertEqual(0.0_kind_phys, rnwfablten_p)
+    @assertEqual(0.0_kind_phys, rnifablten_p)
+    @assertEqual(0.0_kind_phys, rnbcablten_p)
+
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    rublten_p(:, :) = 0.1_kind_phys
+    rucuten_p(:, :) = 0.1_kind_phys
+    rvblten_p(:, :) = 0.1_kind_phys
+    rvcuten_p(:, :) = 0.1_kind_phys
+
+    rthblten_p(:, :) = 0.1_kind_phys
+    rthcuten_p(:, :) = 0.1_kind_phys
+    rthratenlw_p(:, :) = 0.1_kind_phys
+    rthratensw_p(:, :) = 0.1_kind_phys
+
+    rqvblten_p(:, :) = 0.00025_kind_phys
+    rqvcuten_p(:, :) = 0.00025_kind_phys
+
+    rqcblten_p(:, :) = 0.00025_kind_phys
+    rncblten_p(:, :) = 25000.0_kind_phys
+    rqccuten_p(:, :) = 0.00025_kind_phys
+
+    rqiblten_p(:, :) = 0.00025_kind_phys
+    rniblten_p(:, :) = 250.0_kind_phys
+    rqicuten_p(:, :) = 0.00025_kind_phys
+
+    rqsblten_p(:, :) = 0.00025_kind_phys
+
+    rozblten_p(:, :) = 2.5E-10_kind_phys
+
+    rnwfablten_p(:, :) = 25000.0_kind_phys
+    rnifablten_p(:, :) = 25000.0_kind_phys
+    rnbcablten_p(:, :) = 25000.0_kind_phys
+
+    call mmm_physics_save_tendencies_run( &
+        rublten_p, rucuten_p, rvblten_p, rvcuten_p, &
+        rthblten_p, rthcuten_p, rthratenlw_p, rthratensw_p, &
+        rqvblten_p, rqvcuten_p, &
+        rqcblten_p, rncblten_p, rqccuten_p, &
+        rqiblten_p, rniblten_p, rqicuten_p, &
+        rqsblten_p, &
+        rozblten_p, &
+        rnwfablten_p, rnifablten_p, rnbcablten_p, &
+        rublten, rucuten, rvblten, rvcuten, &
+        rthblten, rthcuten, rthratenlw, rthratensw, &
+        rqvblten, rqvcuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
+        errmsg, errflg)
+
+    ! Should save pending tendencies to final tendencies correctly.
+    @assertEqual(0.2_kind_phys, rublten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rucuten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rvblten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rvcuten, spacing(0.2_kind_phys))
+
+    @assertEqual(0.2_kind_phys, rthblten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthcuten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthratenlw, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthratensw, spacing(0.2_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqvblten, spacing(0.0005_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqvcuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqcblten, spacing(0.0005_kind_phys))
+    @assertEqual(50000.0_kind_phys, rncblten, spacing(50000.0_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqccuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqiblten, spacing(0.0005_kind_phys))
+    @assertEqual(500.0_kind_phys, rniblten, spacing(500.0_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqicuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqsblten, spacing(0.0005_kind_phys))
+
+    @assertEqual(5.0E-10_kind_phys, rozblten, spacing(5.0E-10_kind_phys))
+
+    @assertEqual(50000.0_kind_phys, rnwfablten, spacing(50000.0_kind_phys))
+    @assertEqual(50000.0_kind_phys, rnifablten, spacing(50000.0_kind_phys))
+    @assertEqual(50000.0_kind_phys, rnbcablten, spacing(50000.0_kind_phys))
+
+    ! After saving, pending tendencies should be zeroed out.
+    @assertEqual(0.0_kind_phys, rublten_p)
+    @assertEqual(0.0_kind_phys, rucuten_p)
+    @assertEqual(0.0_kind_phys, rvblten_p)
+    @assertEqual(0.0_kind_phys, rvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rthblten_p)
+    @assertEqual(0.0_kind_phys, rthcuten_p)
+    @assertEqual(0.0_kind_phys, rthratenlw_p)
+    @assertEqual(0.0_kind_phys, rthratensw_p)
+
+    @assertEqual(0.0_kind_phys, rqvblten_p)
+    @assertEqual(0.0_kind_phys, rqvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rqcblten_p)
+    @assertEqual(0.0_kind_phys, rncblten_p)
+    @assertEqual(0.0_kind_phys, rqccuten_p)
+
+    @assertEqual(0.0_kind_phys, rqiblten_p)
+    @assertEqual(0.0_kind_phys, rniblten_p)
+    @assertEqual(0.0_kind_phys, rqicuten_p)
+
+    @assertEqual(0.0_kind_phys, rqsblten_p)
+
+    @assertEqual(0.0_kind_phys, rozblten_p)
+
+    @assertEqual(0.0_kind_phys, rnwfablten_p)
+    @assertEqual(0.0_kind_phys, rnifablten_p)
+    @assertEqual(0.0_kind_phys, rnbcablten_p)
+
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    call mmm_physics_save_tendencies_run( &
+        rublten_p, rucuten_p, rvblten_p, rvcuten_p, &
+        rthblten_p, rthcuten_p, rthratenlw_p, rthratensw_p, &
+        rqvblten_p, rqvcuten_p, &
+        rqcblten_p, rncblten_p, rqccuten_p, &
+        rqiblten_p, rniblten_p, rqicuten_p, &
+        rqsblten_p, &
+        rozblten_p, &
+        rnwfablten_p, rnifablten_p, rnbcablten_p, &
+        rublten, rucuten, rvblten, rvcuten, &
+        rthblten, rthcuten, rthratenlw, rthratensw, &
+        rqvblten, rqvcuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
+        errmsg, errflg)
+
+    call mmm_physics_save_tendencies_run( &
+        rublten_p, rucuten_p, rvblten_p, rvcuten_p, &
+        rthblten_p, rthcuten_p, rthratenlw_p, rthratensw_p, &
+        rqvblten_p, rqvcuten_p, &
+        rqcblten_p, rncblten_p, rqccuten_p, &
+        rqiblten_p, rniblten_p, rqicuten_p, &
+        rqsblten_p, &
+        rozblten_p, &
+        rnwfablten_p, rnifablten_p, rnbcablten_p, &
+        rublten, rucuten, rvblten, rvcuten, &
+        rthblten, rthcuten, rthratenlw, rthratensw, &
+        rqvblten, rqvcuten, &
+        rqcblten, rncblten, rqccuten, &
+        rqiblten, rniblten, rqicuten, &
+        rqsblten, &
+        rozblten, &
+        rnwfablten, rnifablten, rnbcablten, &
+        errmsg, errflg)
+
+    ! Consecutive calls should be idempotent.
+    @assertEqual(0.2_kind_phys, rublten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rucuten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rvblten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rvcuten, spacing(0.2_kind_phys))
+
+    @assertEqual(0.2_kind_phys, rthblten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthcuten, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthratenlw, spacing(0.2_kind_phys))
+    @assertEqual(0.2_kind_phys, rthratensw, spacing(0.2_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqvblten, spacing(0.0005_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqvcuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqcblten, spacing(0.0005_kind_phys))
+    @assertEqual(50000.0_kind_phys, rncblten, spacing(50000.0_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqccuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqiblten, spacing(0.0005_kind_phys))
+    @assertEqual(500.0_kind_phys, rniblten, spacing(500.0_kind_phys))
+    @assertEqual(0.0005_kind_phys, rqicuten, spacing(0.0005_kind_phys))
+
+    @assertEqual(0.0005_kind_phys, rqsblten, spacing(0.0005_kind_phys))
+
+    @assertEqual(5.0E-10_kind_phys, rozblten, spacing(5.0E-10_kind_phys))
+
+    @assertEqual(50000.0_kind_phys, rnwfablten, spacing(50000.0_kind_phys))
+    @assertEqual(50000.0_kind_phys, rnifablten, spacing(50000.0_kind_phys))
+    @assertEqual(50000.0_kind_phys, rnbcablten, spacing(50000.0_kind_phys))
+
+    ! Consecutive calls should be idempotent.
+    @assertEqual(0.0_kind_phys, rublten_p)
+    @assertEqual(0.0_kind_phys, rucuten_p)
+    @assertEqual(0.0_kind_phys, rvblten_p)
+    @assertEqual(0.0_kind_phys, rvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rthblten_p)
+    @assertEqual(0.0_kind_phys, rthcuten_p)
+    @assertEqual(0.0_kind_phys, rthratenlw_p)
+    @assertEqual(0.0_kind_phys, rthratensw_p)
+
+    @assertEqual(0.0_kind_phys, rqvblten_p)
+    @assertEqual(0.0_kind_phys, rqvcuten_p)
+
+    @assertEqual(0.0_kind_phys, rqcblten_p)
+    @assertEqual(0.0_kind_phys, rncblten_p)
+    @assertEqual(0.0_kind_phys, rqccuten_p)
+
+    @assertEqual(0.0_kind_phys, rqiblten_p)
+    @assertEqual(0.0_kind_phys, rniblten_p)
+    @assertEqual(0.0_kind_phys, rqicuten_p)
+
+    @assertEqual(0.0_kind_phys, rqsblten_p)
+
+    @assertEqual(0.0_kind_phys, rozblten_p)
+
+    @assertEqual(0.0_kind_phys, rnwfablten_p)
+    @assertEqual(0.0_kind_phys, rnifablten_p)
+    @assertEqual(0.0_kind_phys, rnbcablten_p)
+
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_mmm_physics_save_tendencies_run
 
 @test
 subroutine test_mmm_physics_persist_states_init()
@@ -472,16 +1202,120 @@ subroutine test_compute_characteristic_grid_length_scale_init()
         errmsg, errflg)
 
     ! Should compute characteristic grid length scale correctly.
-    @assertEqual(6.371E4_kind_phys, dx, epsilon(0.0_kind_phys))
+    @assertEqual(6.371E4_kind_phys, dx, spacing(6.371E4_kind_phys))
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
 end subroutine test_compute_characteristic_grid_length_scale_init
 
 @test
-subroutine test_geopotential_height_wrt_sfc_at_if_to_msl_run()
+subroutine test_compute_hydrostatic_upward_air_velocity_at_interface_run()
     use ccpp_kinds, only: kind_phys
     use funit
-    use mmm_physics_compat, only: geopotential_height_wrt_sfc_at_if_to_msl_run
+    use mmm_physics_compat, only: compute_hydrostatic_upward_air_velocity_at_interface_run
+
+    integer, parameter :: ncol = 100, pver = 10, pverp = 11
+    real(kind_phys) :: gravit, omega(ncol, pver), rho(ncol, pver)
+    real(kind_phys) :: wint(ncol, pverp)
+    character(100) :: errmsg
+    integer :: errflg
+
+    integer :: k
+    real(kind_phys), parameter :: wint_expected(*, *) = spread([ &
+        0.0_kind_phys, &
+        0.75_kind_phys, &
+        1.25_kind_phys, &
+        1.75_kind_phys, &
+        2.25_kind_phys, &
+        2.75_kind_phys, &
+        3.25_kind_phys, &
+        3.75_kind_phys, &
+        4.25_kind_phys, &
+        4.75_kind_phys, &
+        0.0_kind_phys], 1, ncol)
+
+    gravit = 9.8_kind_phys
+    rho(:, :) = 1.0_kind_phys
+
+    do k = 1, pver
+        omega(:, k) = -4.9_kind_phys * real(k, kind_phys)
+    end do
+
+    wint(:, :) = huge(0.0_kind_phys)
+
+    call compute_hydrostatic_upward_air_velocity_at_interface_run( &
+        gravit, omega, rho, &
+        wint, &
+        errmsg, errflg)
+
+    ! Should compute hydrostatic upward air velocity at interface correctly.
+    @assertEqual(wint_expected, wint, spacing(maxval(wint_expected)))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    do k = 1, pver
+        omega(:, k) = 4.9_kind_phys * real(k, kind_phys)
+    end do
+
+    wint(:, :) = huge(0.0_kind_phys)
+
+    call compute_hydrostatic_upward_air_velocity_at_interface_run( &
+        gravit, omega, rho, &
+        wint, &
+        errmsg, errflg)
+
+    ! Should compute hydrostatic upward air velocity at interface correctly.
+    @assertEqual(-wint_expected, wint, spacing(maxval(wint_expected)))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_compute_hydrostatic_upward_air_velocity_at_interface_run
+
+@test
+subroutine test_compute_hydrostatic_upward_air_velocity_run()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: compute_hydrostatic_upward_air_velocity_run
+
+    integer, parameter :: ncol = 100, pver = 10
+    real(kind_phys) :: gravit, omega(ncol, pver), rho(ncol, pver)
+    real(kind_phys) :: wmid(ncol, pver)
+    character(100) :: errmsg
+    integer :: errflg
+
+    gravit = 9.8_kind_phys
+    rho(:, :) = 1.0_kind_phys
+
+    omega(:, :) = -49.0_kind_phys
+    wmid(:, :) = huge(0.0_kind_phys)
+
+    call compute_hydrostatic_upward_air_velocity_run( &
+        gravit, omega, rho, &
+        wmid, &
+        errmsg, errflg)
+
+    ! Should compute hydrostatic upward air velocity correctly.
+    @assertEqual(5.0_kind_phys, wmid, spacing(5.0_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    omega(:, :) = 49.0_kind_phys
+    wmid(:, :) = huge(0.0_kind_phys)
+
+    call compute_hydrostatic_upward_air_velocity_run( &
+        gravit, omega, rho, &
+        wmid, &
+        errmsg, errflg)
+
+    ! Should compute hydrostatic upward air velocity correctly.
+    @assertEqual(-5.0_kind_phys, wmid, spacing(5.0_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_compute_hydrostatic_upward_air_velocity_run
+
+@test
+subroutine test_geopotential_height_wrt_sfc_at_interface_to_msl_run()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: geopotential_height_wrt_sfc_at_interface_to_msl_run
 
     integer, parameter :: ncol = 100, pverp = 11
     real(kind_phys) :: gravit, phis(ncol), zisfc(ncol, pverp)
@@ -494,17 +1328,17 @@ subroutine test_geopotential_height_wrt_sfc_at_if_to_msl_run()
     zisfc(:, :) = 10.0_kind_phys
     zimsl(:, :) = huge(0.0_kind_phys)
 
-    call geopotential_height_wrt_sfc_at_if_to_msl_run( &
+    call geopotential_height_wrt_sfc_at_interface_to_msl_run( &
         ncol, &
         gravit, phis, zisfc, &
         zimsl, &
         errmsg, errflg)
 
     ! Should compute geopotential height wrt mean sea level at interface correctly.
-    @assertEqual(20.0_kind_phys, zimsl, epsilon(0.0_kind_phys))
+    @assertEqual(20.0_kind_phys, zimsl, spacing(20.0_kind_phys))
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
-end subroutine test_geopotential_height_wrt_sfc_at_if_to_msl_run
+end subroutine test_geopotential_height_wrt_sfc_at_interface_to_msl_run
 
 @test
 subroutine test_geopotential_height_wrt_sfc_to_msl_run()
@@ -530,7 +1364,89 @@ subroutine test_geopotential_height_wrt_sfc_to_msl_run()
         errmsg, errflg)
 
     ! Should compute geopotential height wrt mean sea level correctly.
-    @assertEqual(20.0_kind_phys, zmmsl, epsilon(0.0_kind_phys))
+    @assertEqual(20.0_kind_phys, zmmsl, spacing(20.0_kind_phys))
     @assertEqual('', errmsg)
     @assertEqual(0, errflg)
 end subroutine test_geopotential_height_wrt_sfc_to_msl_run
+
+@test
+subroutine test_lw_heating_rate_to_air_potential_temperature_tendency_run()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: lw_heating_rate_to_air_potential_temperature_tendency_run
+
+    integer, parameter :: ncol = 100, pver = 10
+    real(kind_phys) :: cpairv(ncol, pver), exner(ncol, pver), lw_heating_rate(ncol, pver)
+    real(kind_phys) :: rthratenlw(ncol, pver)
+    character(100) :: errmsg
+    integer :: errflg
+
+    cpairv(:, :) = 1004.0_kind_phys
+    exner(:, :) = 0.9_kind_phys
+    lw_heating_rate(:, :) = 1.8072_kind_phys
+    rthratenlw(:, :) = huge(0.0_kind_phys)
+
+    call lw_heating_rate_to_air_potential_temperature_tendency_run( &
+        cpairv, exner, lw_heating_rate, &
+        rthratenlw, &
+        errmsg, errflg)
+
+    ! Should compute LW heating rate as potential temperature tendency correctly.
+    @assertEqual(0.002_kind_phys, rthratenlw, spacing(0.002_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    lw_heating_rate(:, :) = -1.8072_kind_phys
+    rthratenlw(:, :) = huge(0.0_kind_phys)
+
+    call lw_heating_rate_to_air_potential_temperature_tendency_run( &
+        cpairv, exner, lw_heating_rate, &
+        rthratenlw, &
+        errmsg, errflg)
+
+    ! Should compute LW heating rate as potential temperature tendency correctly.
+    @assertEqual(-0.002_kind_phys, rthratenlw, spacing(-0.002_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_lw_heating_rate_to_air_potential_temperature_tendency_run
+
+@test
+subroutine test_sw_heating_rate_to_air_potential_temperature_tendency_run()
+    use ccpp_kinds, only: kind_phys
+    use funit
+    use mmm_physics_compat, only: sw_heating_rate_to_air_potential_temperature_tendency_run
+
+    integer, parameter :: ncol = 100, pver = 10
+    real(kind_phys) :: cpairv(ncol, pver), exner(ncol, pver), sw_heating_rate(ncol, pver)
+    real(kind_phys) :: rthratensw(ncol, pver)
+    character(100) :: errmsg
+    integer :: errflg
+
+    cpairv(:, :) = 1004.0_kind_phys
+    exner(:, :) = 0.9_kind_phys
+    sw_heating_rate(:, :) = 1.8072_kind_phys
+    rthratensw(:, :) = huge(0.0_kind_phys)
+
+    call sw_heating_rate_to_air_potential_temperature_tendency_run( &
+        cpairv, exner, sw_heating_rate, &
+        rthratensw, &
+        errmsg, errflg)
+
+    ! Should compute SW heating rate as potential temperature tendency correctly.
+    @assertEqual(0.002_kind_phys, rthratensw, spacing(0.002_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+
+    sw_heating_rate(:, :) = -1.8072_kind_phys
+    rthratensw(:, :) = huge(0.0_kind_phys)
+
+    call sw_heating_rate_to_air_potential_temperature_tendency_run( &
+        cpairv, exner, sw_heating_rate, &
+        rthratensw, &
+        errmsg, errflg)
+
+    ! Should compute SW heating rate as potential temperature tendency correctly.
+    @assertEqual(-0.002_kind_phys, rthratensw, spacing(-0.002_kind_phys))
+    @assertEqual('', errmsg)
+    @assertEqual(0, errflg)
+end subroutine test_sw_heating_rate_to_air_potential_temperature_tendency_run

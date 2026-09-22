@@ -101,12 +101,10 @@ CONTAINS
       ! Add fields for all other constituents
       do const_idx = 1, size(const_props)
          if (.not. const_found(const_idx)) then
-            call const_props(const_idx)%standard_name(standard_name, errflg, errmsg)
+            call const_props(const_idx)%diagnostic_name(diagnostic_name, errflg, errmsg)
             if (errflg /= 0) then
                return
             end if
-            ! truncate the standard name if necessary
-            diagnostic_name = standard_name
             call const_props(const_idx)%units(units, errflg, errmsg)
             if (errflg /= 0) then
                return
@@ -219,8 +217,6 @@ CONTAINS
                call history_out_field(trim(const_diag_names(name_idx)), const_array(:,:,const_idx))
                const_num_found = const_num_found + 1
                const_found(const_idx) = .true.
-            else
-               call history_out_field(trim(standard_name), const_array(:,:,const_idx))
             end if
          end do
          if (const_num_found == size(const_std_names)) then
@@ -231,11 +227,11 @@ CONTAINS
       ! Capture all other constituent fields
       do const_idx = 1, size(const_props)
          if (.not. const_found(const_idx)) then
-            call const_props(const_idx)%standard_name(standard_name, errflg, errmsg)
+            ! Must match the name registered in sima_state_diagnostics_init.
+            call const_props(const_idx)%diagnostic_name(diagnostic_name, errflg, errmsg)
             if (errflg /= 0) then
                return
             end if
-            diagnostic_name = standard_name
             call history_out_field(trim(diagnostic_name), const_array(:,:,const_idx))
          end if
       end do
