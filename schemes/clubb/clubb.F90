@@ -3369,6 +3369,7 @@ module clubb
   subroutine clubb3_run(ncol, pver, pverp, pcnst, top_lev, & ! in
                         ixq, ixcldice, ixcldliq, ixnumice, & ! in
                         rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
+                        rhminl_const, rhminl_adj_land_const, rhminh_const, & ! in
                         dp1, dp2, zvir, rair, cpair, gravit, karman, & ! in
                         calday, tropp_days, & ! in
                         lat, state_phis, landfrac, snowhland, & ! in
@@ -3390,8 +3391,7 @@ module clubb
 !    use tropopause_find,       only: tropopause_find_run
 !but I need to calculate tropp_p_loc
     use holtslag_boville_diff, only: hb_pbl_dependent_coefficients_run
-!BAS I need to figure out what to do about aist_vector
-!    use cldfrc2m,              only: aist_vector
+    use compute_cloud_fraction_two_moment, only: aist_vector
     use atmos_phys_pbl_utils,  only: calc_friction_velocity, calc_obukhov_length, calc_ideal_gas_rrho, &
                                      calc_kinematic_heat_flux, calc_kinematic_water_vapor_flux, &
                                      calc_kinematic_buoyancy_flux
@@ -3400,6 +3400,7 @@ module clubb
     integer, intent(in) :: ncol, pver, pverp, pcnst, top_lev 
     integer, intent(in) :: ixq, ixcldice, ixcldliq, ixnumice
     real(kind_phys), intent(in) :: rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const
+    real(kind_phys), intent(in) :: rhminl_const, rhminl_adj_land_const, rhminh_const
     real(kind_phys), intent(in) :: dp1, dp2, zvir, rair, cpair, gravit, karman
     real(kind_phys), intent(in) :: calday
     real(kind_phys), intent(in) :: tropp_days(:)
@@ -3439,6 +3440,11 @@ module clubb
     real(kind_phys) :: rrho(ncol), ustar2(ncol), kinheat(ncol), kinwat(ncol), kbfs(ncol), obklen(ncol), &
                        dummy2(ncol), dummy3(ncol)
     real(kind_phys) :: th(ncol,pver), thv(ncol,pver)
+    real(kind_phys) :: rhmini_default(ncol)
+    real(kind_phys) :: rhmaxi_default(ncol)
+    real(kind_phys) :: rhminl_arr(ncol)
+    real(kind_phys) :: rhminl_adj_land_arr(ncol)
+    real(kind_phys) :: rhminh_arr(ncol)
 
     ! ---------------------------------------------------------
 
@@ -3553,36 +3559,59 @@ module clubb
 
 !    if (errflg /= 0) return
 
-!    aist_pbuf(:,:top_lev-1) = 0._kind_phys
-!    qsatfac_pbuf(:, :) = 0._kind_phys ! Zero out entire profile in case qsatfac is left undefined in aist_vector below
+    aist_pbuf(:,:top_lev-1) = 0._kind_phys
+    qsatfac_pbuf(:, :) = 0._kind_phys ! Zero out entire profile in case qsatfac is left undefined in aist_vector below
 
-!    do k = top_lev, pver
-!
-!      ! For Type II PSC and for thin cirrus, the clouds can be thin, but
-!      ! extensive and they should start forming when the gridbox mean saturation
-!      ! reaches 1.0.
-!      !
-!      ! For now, use the tropopause diagnostic to determine where the Type II
-!      ! PSC should be, but in the future wold like a better metric that can also
-!      ! identify the level for thin cirrus. Include the tropopause level so that
-!      ! the cold point tropopause will use the stratospheric values.
-!      where (k <= troplev)
-!        rhmini = rhminis_const
-!        rhmaxi = rhmaxis_const
-!      elsewhere
-!        rhmini = rhmini_const
-!        rhmaxi = rhmaxi_const
-!      end where
-!
-!      if ( trim(subcol_scheme) == 'SILHS' ) then
-!        call aist_vector(state_q(:,k,ixq),state_t(:,k),state_pmid(:,k),state_q(:,k,ixcldice), &
-!             state_q(:,k,ixnumice), landfrac(:),snowhland(:),aist_pbuf(:,k),ncol )
-!      else
-!        call aist_vector(state_q(:,k,ixq),state_t(:,k),state_pmid(:,k),state_q(:,k,ixcldice), &
-!              state_q(:,k,ixnumice), landfrac(:),snowhland(:),aist_pbuf(:,k),ncol,&
-!              qsatfac_out=qsatfac_pbuf(:,k), rhmini_in=rhmini, rhmaxi_in=rhmaxi)
-!      endif
-!    enddo
+    rhmini_default(:) = rhmini_const
+    rhmaxi_default(:) = rhmaxi_const
+    rhminl_arr(:) = rhminl_const
+    rhminl_adj_land_arr(:) = rhminl_adj_land_const
+    rhminh_arr(:) = rhminh_const
+
+    do k = top_lev, pver
+
+      ! For Type II PSC and for thin cirrus, the clouds can be thin, but
+      ! extensive and they should start forming when the gridbox mean saturation
+      ! reaches 1.0.
+      !
+      ! For now, use the tropopause diagnostic to determine where the Type II
+      ! PSC should be, but in the future wold like a better metric that can also
+      ! identify the level for thin cirrus. Include the tropopause level so that
+      ! the cold point tropopause will use the stratospheric values.
+      where (k <= troplev)
+        rhmini = rhminis_const
+        rhmaxi = rhmaxis_const
+      elsewhere
+        rhmini = rhmini_const
+        rhmaxi = rhmaxi_const
+      end where
+
+      !REMOVECAM: this is no longer needed when CAM is retired and pcols no longer exists
+      aist_pbuf(:,k) = 0._kind_phys
+      !REMOVECAM_END
+      if ( trim(subcol_scheme) == 'SILHS' ) then
+        call aist_vector(state_q(:ncol,k,ixq), state_t(:ncol,k), &
+             state_pmid(:ncol,k), state_q(:ncol,k,ixcldice), &
+             state_q(:ncol,k,ixnumice), landfrac(:ncol), &
+             snowhland(:ncol), aist_pbuf(:ncol,k), ncol, &
+             rhmaxi_in=rhmaxi_default(:ncol), &
+             rhmini_in=rhmini_default(:ncol), &
+             rhminl_in=rhminl_arr(:ncol), &
+             rhminl_adj_land_in=rhminl_adj_land_arr(:ncol), &
+             rhminh_in=rhminh_arr(:ncol))
+      else
+        call aist_vector(state_q(:ncol,k,ixq), state_t(:ncol,k), &
+             state_pmid(:ncol,k), state_q(:ncol,k,ixcldice), &
+             state_q(:ncol,k,ixnumice), landfrac(:ncol), &
+             snowhland(:ncol), aist_pbuf(:ncol,k), ncol, &
+             rhmaxi_in=rhmaxi(:ncol), &
+             rhmini_in=rhmini(:ncol), &
+             rhminl_in=rhminl_arr(:ncol), &
+             rhminl_adj_land_in=rhminl_adj_land_arr(:ncol), &
+             rhminh_in=rhminh_arr(:ncol), &
+             qsatfac_out=qsatfac_pbuf(:ncol,k))
+      endif
+    enddo
 
     ! --------------------------------------------------------------------------------- !
     !  THIS PART COMPUTES THE LIQUID STRATUS FRACTION                                   !
