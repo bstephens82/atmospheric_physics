@@ -3366,24 +3366,44 @@ module clubb
   ! ----------------------------------------------------------------------------------------
   ! ----------------------------------------------------------------------------------------
 
+!  subroutine clubb3_run(ncol, pver, pverp, pcnst, top_lev, & ! in
+!                        ixq, ixcldice, ixcldliq, ixnumice, & ! in
+!                        rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
+!                        rhminl_const, rhminl_adj_land_const, rhminh_const, & ! in
+!                        dp1, dp2, zvir, rair, cpair, gravit, karman, & ! in
+!                        calday, tropp_days, & ! in
+!                        lat, state_phis, landfrac, snowhland, & ! in
+!                        wsx, wsy, shf, & ! in
+!                        state_pint, state_pmid, state_pdel, state_pdeldry, & ! in
+!                        rcm, cloud_frac, state_t, exner, & ! in
+!                        state_exner, state_zm, state_zi, u, & ! in
+!                        v, cmfmc, cflx, state_q, & ! in
+!                        single_column, scm_cambfb_mode, lq, & ! in
+!                        cnst_type, scm_clubb_iop_name, subcol_scheme, & ! in
+!                        mf_cloudfrac_output, mf_qc_output, & ! in
+!                        pblh_pbuf, alst_pbuf, qlst_pbuf, deepcu_pbuf, shalcu_pbuf, & ! inout
+!                        cmfmc_sh_pbuf, dp_icwmr_pbuf, concld_pbuf, aist_pbuf, & ! inout
+!                        qsatfac_pbuf, ast_pbuf, qist_pbuf, cld_pbuf, ptend_q, troplev, & ! inout
+!                        errmsg, errflg ) ! out
+
   subroutine clubb3_run(ncol, pver, pverp, pcnst, top_lev, & ! in
                         ixq, ixcldice, ixcldliq, ixnumice, & ! in
                         rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
                         rhminl_const, rhminl_adj_land_const, rhminh_const, & ! in
                         dp1, dp2, zvir, rair, cpair, gravit, karman, & ! in
                         calday, tropp_days, & ! in
-                        lat, state_phis, landfrac, snowhland, & ! in
-                        wsx, wsy, shf, & ! in
+                        lat, state_phis, state_t, state_q, & ! in
                         state_pint, state_pmid, state_pdel, state_pdeldry, & ! in
-                        rcm, cloud_frac, state_t, exner, & ! in
-                        state_exner, state_zm, state_zi, u, & ! in
-                        v, cmfmc, cflx, state_q, & ! in
+                        state_zm, state_zi, state_u, state_v, state_exner, & ! in
+                        landfrac, snowhland, wsx, & ! in
+                        wsy, shf, cflx, ptend_q, & ! in
+                        rcm, cloud_frac, exner, cmfmc, & ! in
                         single_column, scm_cambfb_mode, lq, & ! in
                         cnst_type, scm_clubb_iop_name, subcol_scheme, & ! in
                         mf_cloudfrac_output, mf_qc_output, & ! in
                         pblh_pbuf, alst_pbuf, qlst_pbuf, deepcu_pbuf, shalcu_pbuf, & ! inout
                         cmfmc_sh_pbuf, dp_icwmr_pbuf, concld_pbuf, aist_pbuf, & ! inout
-                        qsatfac_pbuf, ast_pbuf, qist_pbuf, cld_pbuf, ptend_q, troplev, & ! inout
+                        qsatfac_pbuf, ast_pbuf, qist_pbuf, cld_pbuf, troplev, & ! inout
                         errmsg, errflg ) ! out
 
     use clubb_mf,              only: do_clubb_mf, do_clubb_mf_rad, clubb_mf_cldfrac_fac
@@ -3408,7 +3428,7 @@ module clubb
                                    wsx(:), wsy(:), shf(:)
     real(kind_phys), intent(in) :: state_pint(:,:), state_pmid(:,:), state_pdel(:,:), state_pdeldry(:,:), rcm(:,:), &
                                    cloud_frac(:,:), state_t(:,:), exner(:,:), state_exner(:,:), &
-                                   state_zm(:,:), state_zi(:,:), u(:,:), v(:,:), cmfmc(:,:), cflx(:,:), &
+                                   state_zm(:,:), state_zi(:,:), state_u(:,:), state_v(:,:), cmfmc(:,:), cflx(:,:), &
                                    mf_cloudfrac_output(:,:), mf_qc_output(:,:)
     real(kind_phys), intent(in) :: state_q(:,:,:)
    ! Climatological tropopause pressures (Pa), (ncol,ntimes=12).
@@ -3674,8 +3694,8 @@ module clubb
       gravit    = gravit,                                    &
       z         = state_zm(:ncol,:pver),                    &
       zi        = state_zi(:ncol,:pverp),                   &
-      u         = u(:ncol,:pver),                     &
-      v         = v(:ncol,:pver),                     &
+      u         = state_u(:ncol,:pver),                     &
+      v         = state_v(:ncol,:pver),                     &
       cldn      = cld_pbuf(:ncol,:pver),                   &
       ! Inputs from CLUBB (not HB coefficients)
       thv       = thv(:ncol,:pver),                          &
