@@ -3366,26 +3366,6 @@ module clubb
   ! ----------------------------------------------------------------------------------------
   ! ----------------------------------------------------------------------------------------
 
-!  subroutine clubb3_run(ncol, pver, pverp, pcnst, top_lev, & ! in
-!                        ixq, ixcldice, ixcldliq, ixnumice, & ! in
-!                        rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
-!                        rhminl_const, rhminl_adj_land_const, rhminh_const, & ! in
-!                        dp1, dp2, zvir, rair, cpair, gravit, karman, & ! in
-!                        calday, tropp_days, & ! in
-!                        lat, state_phis, landfrac, snowhland, & ! in
-!                        wsx, wsy, shf, & ! in
-!                        state_pint, state_pmid, state_pdel, state_pdeldry, & ! in
-!                        rcm, cloud_frac, state_t, exner, & ! in
-!                        state_exner, state_zm, state_zi, u, & ! in
-!                        v, cmfmc, cflx, state_q, & ! in
-!                        single_column, scm_cambfb_mode, lq, & ! in
-!                        cnst_type, scm_clubb_iop_name, subcol_scheme, & ! in
-!                        mf_cloudfrac_output, mf_qc_output, & ! in
-!                        pblh_pbuf, alst_pbuf, qlst_pbuf, deepcu_pbuf, shalcu_pbuf, & ! inout
-!                        cmfmc_sh_pbuf, dp_icwmr_pbuf, concld_pbuf, aist_pbuf, & ! inout
-!                        qsatfac_pbuf, ast_pbuf, qist_pbuf, cld_pbuf, ptend_q, troplev, & ! inout
-!                        errmsg, errflg ) ! out
-
   subroutine clubb3_run(ncol, pver, pverp, pcnst, top_lev, & ! in
                         ixq, ixcldice, ixcldliq, ixnumice, & ! in
                         rhminis_const, rhmaxis_const, rhmini_const, rhmaxi_const, & ! in
