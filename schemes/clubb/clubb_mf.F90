@@ -1960,6 +1960,7 @@ module clubb_mf
                                     ee2, ud2 )
   ! =============================================================================== !
   ! Buoyancy-sorting neutral mixing fraction, after Bretherton et al 2014.          !
+  ! DOI: 10.1175/1520-0493(2004)132<0864:ANPFSC>2.0.CO;2                            !
   ! Iterates the trial (qtn,thln,wn) state internally and returns only the final    !
   ! entrainment/detrainment area-fraction terms (ee2, ud2).                         !
   ! =============================================================================== !
@@ -2175,9 +2176,6 @@ module clubb_mf
      ! heat-flux vertical-gradient threshold (clubb_mf_Lopt==2), same role
      ! as tke_grad_thresh but for the heat-flux-based diagnostic
      real(r8), parameter :: hflux_grad_thresh = 1.e-4_r8
-     !
-     ! Pa -> hPa conversion, needed because buoyan_dilute expects hPa
-     real(r8), parameter :: pa_to_hpa = 0.01_r8
      !
      ! intialize local variables
      cape      = 0._r8
